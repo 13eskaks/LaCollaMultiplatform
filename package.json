@@ -1,0 +1,24 @@
+{
+  "name": "lacolla",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "turbo run dev --filter=web",
+    "dev:admin": "turbo run dev --filter=admin",
+    "dev:mobile": "turbo run dev --filter=mobile",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "postinstall": "node -e \"const{existsSync,symlinkSync}=require('fs');const{resolve}=require('path');const src=resolve('apps/mobile/node_modules/expo');const dst=resolve('node_modules/expo');if(existsSync(src)&&!existsSync(dst)){symlinkSync(src,dst,'junction');console.log('expo junction created');}\""
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
