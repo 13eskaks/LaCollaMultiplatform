@@ -1,16 +1,21 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 
 export default function OnboardingIndexScreen() {
   const router = useRouter()
-  const { profile } = useAuthStore()
+  const { profile, signOut } = useAuthStore()
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.content}>
+        <TouchableOpacity style={styles.logout} onPress={signOut}>
+          <Text style={styles.logoutText}>Tancar sessió</Text>
+        </TouchableOpacity>
+
         <View style={styles.header}>
           <Text style={styles.wave}>👋</Text>
           <Text style={styles.title}>
@@ -29,7 +34,7 @@ export default function OnboardingIndexScreen() {
             <Text style={styles.cardIcon}>🔍</Text>
             <Text style={styles.cardTitle}>Unir-me a una colla</Text>
             <Text style={styles.cardDesc}>Busca la teua colla i sol·licita l'entrada</Text>
-            <Text style={styles.cardArrow}>→</Text>
+            <Ionicons name="arrow-forward" size={20} color={colors.primary[600]} style={{ marginTop: spacing[2] }} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -40,7 +45,7 @@ export default function OnboardingIndexScreen() {
             <Text style={styles.cardIcon}>✨</Text>
             <Text style={[styles.cardTitle, styles.cardTitleAccent]}>Crear una colla nova</Text>
             <Text style={[styles.cardDesc, styles.cardDescAccent]}>Funda la teua pròpia colla</Text>
-            <Text style={[styles.cardArrow, styles.cardArrowAccent]}>→</Text>
+            <Ionicons name="arrow-forward" size={20} color={colors.white} style={{ marginTop: spacing[2] }} />
           </TouchableOpacity>
         </View>
       </View>
@@ -50,6 +55,8 @@ export default function OnboardingIndexScreen() {
 
 const styles = StyleSheet.create({
   safe:             { flex: 1, backgroundColor: colors.white },
+  logout:           { position: 'absolute', top: spacing[4], right: spacing.screenH, zIndex: 10 },
+  logoutText:       { color: colors.gray[400], fontSize: 13 },
   content:          { flex: 1, paddingHorizontal: spacing.screenH, justifyContent: 'center', gap: spacing[10] },
   header:           { gap: spacing[3] },
   wave:             { fontSize: 40 },
@@ -64,6 +71,4 @@ const styles = StyleSheet.create({
   cardTitleAccent:  { color: colors.white },
   cardDesc:         { ...typography.body, color: colors.gray[500] },
   cardDescAccent:   { color: 'rgba(255,255,255,0.8)' },
-  cardArrow:        { ...typography.h2, color: colors.primary[600], marginTop: spacing[2] },
-  cardArrowAccent:  { color: colors.white },
 })

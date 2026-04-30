@@ -1,14 +1,15 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native'
-import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'expo-router'
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native'
+import { useState, useCallback, useRef } from 'react'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
+import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-const TABS = ['La colla', 'Descoberta'] as const
+const TABS = ['La colla', 'Global'] as const
 type Tab = typeof TABS[number]
 
 function tempsRelatiu(dateStr: string): string {
@@ -22,17 +23,18 @@ function tempsRelatiu(dateStr: string): string {
 
 export default function ForumScreen() {
   const router = useRouter()
-  const { collaActiva } = useCollaStore()
+  const { collaActiva, isComissioActiva } = useCollaStore()
+  const { profile } = useAuthStore()
   const [tab, setTab] = useState<Tab>('La colla')
   const [fils, setFils] = useState<any[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
   const channelRef = useRef<any>(null)
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     loadFils()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
-  }, [tab, collaActiva])
+  }, [tab, collaActiva?.id]))
 
   async function loadFils() {
     setLoading(true)
@@ -41,7 +43,7 @@ export default function ForumScreen() {
 
     if (tab === 'La colla' && collaActiva) {
       q = q.eq('colla_id', collaActiva.id)
-    } else if (tab === 'Descoberta') {
+    } else if (tab === 'Global') {
       q = q.is('colla_id', null)
     }
 
@@ -56,6 +58,20 @@ export default function ForumScreen() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_fils', filter: `colla_id=eq.${collaActiva.id}` }, () => loadFils())
         .subscribe()
     }
+  }
+
+  async function handleDelete(fil: any) {
+    Alert.alert('Eliminar fil', 'S\'eliminaran tots els missatges del fil. Estàs segur/a?', [
+      { text: 'Cancel·lar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+        await supabase.from('forum_fils').delete().eq('id', fil.id)
+        setFils(prev => prev.filter(f => f.id !== fil.id))
+      }},
+    ])
+  }
+
+  function canDelete(fil: any) {
+    return isComissioActiva() || fil.autor_id === profile?.id
   }
 
   async function onRefresh() {
@@ -112,6 +128,11 @@ export default function ForumScreen() {
               <View style={styles.cardRight}>
                 <Text style={styles.respostes}>{fil.forum_missatges?.[0]?.count ?? 0}</Text>
                 <Text style={styles.respostesLabel}>💬</Text>
+                {canDelete(fil) && (
+                  <TouchableOpacity onPress={() => handleDelete(fil)} hitSlop={8}>
+                    <Text style={styles.deleteBtn}>🗑</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </TouchableOpacity>
           ))}
@@ -119,7 +140,7 @@ export default function ForumScreen() {
         </ScrollView>
       )}
 
-      <TouchableOpacity style={styles.fab} onPress={() => router.push('/forum/create' as any)}>
+      <TouchableOpacity style={styles.fab} onPress={() => router.push({ pathname: '/forum/create', params: { global: tab === 'Global' ? '1' : '0' } } as any)}>
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -144,6 +165,7 @@ const styles = StyleSheet.create({
   cardRight:   { alignItems: 'center', minWidth: 32 },
   respostes:   { ...typography.bodySm, color: colors.gray[600], fontWeight: '700' },
   respostesLabel:{ fontSize: 12 },
+  deleteBtn:   { fontSize: 13, marginTop: spacing[1] },
   fab:         { position: 'absolute', bottom: spacing[6], right: spacing.screenH, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary[600], justifyContent: 'center', alignItems: 'center', ...shadows.lg },
   fabText:     { color: colors.white, fontSize: 28, fontWeight: '300', lineHeight: 32 },
 })

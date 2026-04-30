@@ -1,7 +1,8 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, TextInput } from 'react-native'
-import { useLocalSearchParams } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useLocalSearchParams, useFocusEffect } from 'expo-router'
+import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -18,6 +19,9 @@ export default function PressupostScreen() {
   const [any, setAny] = useState(new Date().getFullYear())
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editItem, setEditItem] = useState<any>(null)
+  const [editExecutat, setEditExecutat] = useState('')
 
   // Form
   const [categoria, setCategoria] = useState<string>(CATEGORIES[0])
@@ -25,7 +29,7 @@ export default function PressupostScreen() {
   const [importPressupostat, setImportPressupostat] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { loadPartides() }, [collaId, any])
+  useFocusEffect(useCallback(() => { loadPartides() }, [collaId, any]))
 
   async function loadPartides() {
     setLoading(true)
@@ -37,6 +41,32 @@ export default function PressupostScreen() {
       .order('categoria', { ascending: true })
     setPartides(data ?? [])
     setLoading(false)
+  }
+
+  function openEdit(p: any) {
+    setEditItem(p)
+    setEditExecutat(String(p.import_executat ?? 0))
+    setShowEditModal(true)
+  }
+
+  async function handleSaveEdit() {
+    const num = parseFloat(editExecutat.replace(',', '.'))
+    if (isNaN(num) || num < 0) { Alert.alert('Error', 'Import invàlid'); return }
+    setSaving(true)
+    await supabase.from('pressupost_partides').update({ import_executat: num }).eq('id', editItem.id)
+    setSaving(false)
+    setShowEditModal(false)
+    loadPartides()
+  }
+
+  async function handleDelete(p: any) {
+    Alert.alert('Eliminar partida', `Eliminar "${p.concepte}"?`, [
+      { text: 'Cancel·lar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+        await supabase.from('pressupost_partides').delete().eq('id', p.id)
+        setPartides(prev => prev.filter(x => x.id !== p.id))
+      }},
+    ])
   }
 
   async function handleAdd() {
@@ -82,11 +112,11 @@ export default function PressupostScreen() {
       {/* Any selector */}
       <View style={styles.anyRow}>
         <TouchableOpacity onPress={() => setAny(a => a - 1)} style={styles.anyBtn}>
-          <Text style={styles.anyBtnText}>‹</Text>
+          <Ionicons name="chevron-back" size={20} color={colors.primary[600]} />
         </TouchableOpacity>
         <Text style={styles.anyText}>{any}</Text>
         <TouchableOpacity onPress={() => setAny(a => a + 1)} style={styles.anyBtn}>
-          <Text style={styles.anyBtnText}>›</Text>
+          <Ionicons name="chevron-forward" size={20} color={colors.primary[600]} />
         </TouchableOpacity>
       </View>
 
@@ -143,6 +173,16 @@ export default function PressupostScreen() {
                         <Text style={[styles.partidaPct, (p.import_executat ?? 0) > p.import_pressupostat && { color: colors.danger[500] }]}>
                           {p.import_pressupostat > 0 ? Math.round(((p.import_executat ?? 0) / p.import_pressupostat) * 100) : 0}%
                         </Text>
+                        {isComissioActiva() && (
+                          <View style={styles.partidaActions}>
+                            <TouchableOpacity onPress={() => openEdit(p)} hitSlop={6}>
+                              <Text style={styles.actionBtn}>✏️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => handleDelete(p)} hitSlop={6}>
+                              <Text style={styles.actionBtn}>🗑</Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
                       </View>
                       {idx < items.length - 1 && <View style={styles.divider} />}
                     </View>
@@ -191,6 +231,25 @@ export default function PressupostScreen() {
           </View>
         </View>
       </Modal>
+      <Modal visible={showEditModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modal}>
+            <Text style={styles.modalTitle}>Actualitzar executat</Text>
+            {editItem && <Text style={styles.editConcepte}>{editItem.concepte}</Text>}
+            <TextInput
+              style={styles.input}
+              value={editExecutat}
+              onChangeText={setEditExecutat}
+              placeholder="Import executat (€)"
+              keyboardType="decimal-pad"
+            />
+            <View style={styles.modalBtns}>
+              <Button label="Cancel·lar" variant="secondary" size="md" onPress={() => setShowEditModal(false)} style={{ flex: 1 }} />
+              <Button label="Guardar" size="md" loading={saving} onPress={handleSaveEdit} style={{ flex: 1 }} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -199,7 +258,6 @@ const styles = StyleSheet.create({
   safe:           { flex: 1, backgroundColor: colors.gray[50] },
   anyRow:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100], gap: spacing[6] },
   anyBtn:         { padding: spacing[2] },
-  anyBtnText:     { fontSize: 24, color: colors.primary[600] },
   anyText:        { ...typography.h2, color: colors.gray[900], minWidth: 60, textAlign: 'center' },
   resumCard:      { margin: spacing.screenH, backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[4], ...shadows.sm, gap: spacing[3] },
   resumRow:       { flexDirection: 'row', justifyContent: 'space-around' },
@@ -219,7 +277,10 @@ const styles = StyleSheet.create({
   partidaConcepte:{ ...typography.body, color: colors.gray[800], fontWeight: '600' },
   partidaImport:  { ...typography.caption, color: colors.gray[400], marginTop: 2 },
   partidaPct:     { ...typography.h3, color: colors.primary[600], fontWeight: '700' },
-  divider:        { height: 1, backgroundColor: colors.gray[100] },
+  divider:          { height: 1, backgroundColor: colors.gray[100] },
+  partidaActions:   { flexDirection: 'row', gap: spacing[1] },
+  actionBtn:        { fontSize: 13 },
+  editConcepte:     { ...typography.body, color: colors.gray[600], textAlign: 'center' },
   fab:            { position: 'absolute', bottom: spacing[6], right: spacing.screenH, width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary[600], justifyContent: 'center', alignItems: 'center', ...shadows.lg },
   fabText:        { color: colors.white, fontSize: 28, fontWeight: '300', lineHeight: 32 },
   modalOverlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

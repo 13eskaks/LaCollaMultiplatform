@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Input } from '@/components/ui/Input'
 import { Avatar } from '@/components/ui/Avatar'
-import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 
 export default function JoinCollaScreen() {
@@ -14,8 +13,7 @@ export default function JoinCollaScreen() {
   const [query, setQuery] = useState('')
   const [colles, setColles] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [joined, setJoined] = useState<Set<string>>(new Set())
-  const [joining, setJoining] = useState<string | null>(null)
+  const [myCollaIds, setMyCollaIds] = useState<Set<string>>(new Set())
 
   const search = useCallback(async (q: string) => {
     setLoading(true)
@@ -34,22 +32,15 @@ export default function JoinCollaScreen() {
     return () => clearTimeout(t)
   }, [query])
 
-  useEffect(() => { search('') }, [])
-
-  async function handleJoin(collaId: string) {
-    setJoining(collaId)
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
+  useEffect(() => {
+    search('')
+    supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      await supabase.from('colla_membres').insert({
-        colla_id: collaId, user_id: user.id, estat: 'pendent', rol: 'membre',
+      supabase.from('colla_membres').select('colla_id').eq('user_id', user.id).then(({ data }) => {
+        setMyCollaIds(new Set(data?.map((m: any) => m.colla_id) ?? []))
       })
-      setJoined(prev => new Set([...prev, collaId]))
-      router.push(`/(auth)/onboarding/pending?colla_id=${collaId}`)
-    } finally {
-      setJoining(null)
-    }
-  }
+    })
+  }, [])
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -73,25 +64,22 @@ export default function JoinCollaScreen() {
         <EmptyState icon="🔍" title="No s'han trobat colles" subtitle="Prova amb un altre terme de cerca" />
       ) : (
         <FlatList
-          data={colles}
+          data={colles.filter(c => !myCollaIds.has(c.id))}
           keyExtractor={c => c.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
-            <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.card}
+              activeOpacity={0.75}
+              onPress={() => router.push(`/colla/${item.id}/landing` as any)}
+            >
               <Avatar name={item.nom} uri={item.avatar_url} size="lg" />
               <View style={styles.info}>
                 <Text style={styles.collaName}>{item.nom}</Text>
                 {item.localitat && <Text style={styles.collaMeta}>📍 {item.localitat}</Text>}
               </View>
-              <Button
-                label={joined.has(item.id) ? 'Sol·licitat ✓' : 'Sol·licitar'}
-                size="sm"
-                variant={joined.has(item.id) ? 'secondary' : 'primary'}
-                loading={joining === item.id}
-                disabled={joined.has(item.id)}
-                onPress={() => handleJoin(item.id)}
-              />
-            </View>
+              <Text style={styles.chevron}>›</Text>
+            </TouchableOpacity>
           )}
         />
       )}
@@ -113,4 +101,5 @@ const styles = StyleSheet.create({
   info:        { flex: 1 },
   collaName:   { ...typography.h3, color: colors.gray[900] },
   collaMeta:   { ...typography.bodySm, color: colors.gray[500], marginTop: 2 },
+  chevron:     { fontSize: 22, color: colors.gray[400], fontWeight: '300' },
 })

@@ -36,7 +36,7 @@ export default function PendingScreen() {
         async (payload: any) => {
           if (payload.new?.estat === 'actiu') {
             await loadColles()
-            router.replace('/(tabs)/')
+            router.replace('/(tabs)/' as any)
           }
         }
       )

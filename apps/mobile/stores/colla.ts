@@ -18,7 +18,7 @@ export const useCollaStore = create<CollaState>((set, get) => ({
   colles: [],
   collaActiva: null,
   membershipActiva: null,
-  loading: false,
+  loading: true,
 
   loadColles: async () => {
     set({ loading: true })
@@ -32,6 +32,7 @@ export const useCollaStore = create<CollaState>((set, get) => ({
       .eq('estat', 'actiu')
       .order('data_ingres', { ascending: false })
 
+    const currentId = get().collaActiva?.id
     const colles = data?.map(m => ({
       ...m.colles,
       membership: m,
@@ -39,9 +40,12 @@ export const useCollaStore = create<CollaState>((set, get) => ({
 
     set({ colles, loading: false })
 
-    // Activar la primera colla per defecte
-    if (colles.length > 0 && !get().collaActiva) {
-      get().setCollaActiva(colles[0].id)
+    if (!currentId) {
+      if (colles.length > 0) get().setCollaActiva(colles[0].id)
+    } else {
+      const refreshed = colles.find(c => c.id === currentId)
+      if (refreshed) set({ collaActiva: refreshed, membershipActiva: refreshed.membership ?? null })
+      else if (colles.length > 0) get().setCollaActiva(colles[0].id)
     }
   },
 

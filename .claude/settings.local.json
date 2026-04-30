@@ -6,7 +6,8 @@
       "PowerShell(Get-NetTCPConnection *)",
       "Bash(node *)",
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in {**d.get\\('dependencies',{}\\),**d.get\\('devDependencies',{}\\)}.items\\(\\) if 'expo' in k.lower\\(\\)}, indent=2\\)\\)\")",
-      "Bash(npx expo *)"
+      "Bash(npx expo *)",
+      "Bash(npm install *)"
     ]
   }
 }

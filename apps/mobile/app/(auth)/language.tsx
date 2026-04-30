@@ -3,24 +3,28 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { useRouter } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useTranslation } from 'react-i18next'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Button } from '@/components/ui/Button'
+import i18n from '@/lib/i18n'
 
 const LANGUAGES = [
-  { code: 'ca', flag: '🌊', name: 'Valencià', sub: 'Comunitat Valenciana' },
-  { code: 'es', flag: '🌞', name: 'Castellano', sub: 'Español' },
-  { code: 'en', flag: '🌍', name: 'English', sub: 'International' },
+  { code: 'ca', flag: '🌊', nameKey: 'lang.ca', subKey: 'lang.ca.sub' },
+  { code: 'es', flag: '🌞', nameKey: 'lang.es', subKey: 'lang.es.sub' },
+  { code: 'en', flag: '🌍', nameKey: 'lang.en', subKey: 'lang.en.sub' },
 ] as const
 
 type LangCode = 'ca' | 'es' | 'en'
 
 export default function LanguageScreen() {
   const router = useRouter()
-  const [selected, setSelected] = useState<LangCode | null>(null)
+  const { t } = useTranslation()
+  const [selected, setSelected] = useState<LangCode | null>((i18n.language as LangCode) ?? null)
 
   async function handleContinue() {
     if (!selected) return
     await AsyncStorage.setItem('language', selected)
+    await i18n.changeLanguage(selected)
     router.back()
   }
 
@@ -30,8 +34,8 @@ export default function LanguageScreen() {
         <Text style={styles.backText}>✕</Text>
       </TouchableOpacity>
 
-      <Text style={styles.title}>Tria l'idioma</Text>
-      <Text style={styles.subtitle}>Pots canviar-ho en qualsevol moment des del perfil</Text>
+      <Text style={styles.title}>{t('lang.title')}</Text>
+      <Text style={styles.subtitle}>{t('lang.subtitle')}</Text>
 
       <View style={styles.options}>
         {LANGUAGES.map((lang) => {
@@ -45,8 +49,8 @@ export default function LanguageScreen() {
             >
               <Text style={styles.flag}>{lang.flag}</Text>
               <View style={styles.cardText}>
-                <Text style={[styles.langName, isSelected && styles.langNameSelected]}>{lang.name}</Text>
-                <Text style={styles.langSub}>{lang.sub}</Text>
+                <Text style={[styles.langName, isSelected && styles.langNameSelected]}>{t(lang.nameKey)}</Text>
+                <Text style={styles.langSub}>{t(lang.subKey)}</Text>
               </View>
               {isSelected && <Text style={styles.check}>✓</Text>}
             </TouchableOpacity>
@@ -55,7 +59,7 @@ export default function LanguageScreen() {
       </View>
 
       <Button
-        label="Continuar →"
+        label={t('lang.continue')}
         size="lg"
         disabled={!selected}
         onPress={handleContinue}

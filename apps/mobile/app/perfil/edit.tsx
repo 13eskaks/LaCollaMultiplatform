@@ -1,14 +1,43 @@
-import { useState, useEffect } from 'react'
-import { View, Text, StyleSheet, ScrollView, Switch, Alert } from 'react-native'
+import { useState } from 'react'
+import {
+  View, Text, StyleSheet, ScrollView, Switch, Alert,
+  Modal, FlatList, TouchableOpacity, Image, Dimensions,
+} from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
-import { colors, typography, spacing, radius } from '@/theme'
+import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Avatar } from '@/components/ui/Avatar'
+
+const SCREEN_W = Dimensions.get('window').width
+const AVATAR_COLS = 4
+const AVATAR_GAP = 8
+const AVATAR_SIZE = (SCREEN_W - spacing.screenH * 2 - AVATAR_GAP * (AVATAR_COLS - 1)) / AVATAR_COLS
+
+const SEEDS = [
+  'Felix','Daisy','Lily','Luna','Zoe','Max','Leo','Mia',
+  'Nova','Rex','Aria','Bolt','Echo','Finn','Gus','Ivy',
+  'Jade','Kai','Lux','Mox','Nox','Ori','Pip','Quinn',
+  'Raf','Sky','Taz','Uma','Vex','Wren','Xen','Yuki',
+]
+const STYLES = ['avataaars', 'bottts', 'fun-emoji', 'pixel-art']
+const STYLE_LABELS: Record<string, string> = {
+  avataaars: '🧑 Persones',
+  bottts: '🤖 Robots',
+  'fun-emoji': '😀 Emojis',
+  'pixel-art': '🕹 Píxel',
+}
+
+const PRESET_AVATARS = STYLES.flatMap(style =>
+  SEEDS.map(seed => ({
+    url: `https://api.dicebear.com/9.x/${style}/png?seed=${seed}&size=128`,
+    style,
+  }))
+)
 
 export default function EditPerfilScreen() {
   const router = useRouter()
@@ -22,18 +51,35 @@ export default function EditPerfilScreen() {
   const [mostrarTelefon, setMostrarTelefon] = useState(profile?.show_telefon ?? false)
   const [visibleDirectori, setVisibleDirectori] = useState(profile?.visible_directori ?? true)
   const [acceptaMissatgesAltres, setAcceptaMissatgesAltres] = useState(profile?.rep_missatges_altres_colles ?? false)
-  const [avatarUri, setAvatarUri] = useState<string | null>(null)
+
+  const [localAvatarUri, setLocalAvatarUri] = useState<string | null>(null)
+  const [presetAvatarUrl, setPresetAvatarUrl] = useState<string | null>(null)
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false)
+  const [activeStyle, setActiveStyle] = useState(STYLES[0])
+
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  async function pickAvatar() {
+  const currentAvatarUri = localAvatarUri ?? presetAvatarUrl ?? profile?.avatar_url
+
+  async function pickFromGallery() {
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.8,
     })
-    if (!res.canceled && res.assets[0]) setAvatarUri(res.assets[0].uri)
+    if (!res.canceled && res.assets[0]) {
+      setLocalAvatarUri(res.assets[0].uri)
+      setPresetAvatarUrl(null)
+      setShowAvatarPicker(false)
+    }
+  }
+
+  function selectPreset(url: string) {
+    setPresetAvatarUrl(url)
+    setLocalAvatarUri(null)
+    setShowAvatarPicker(false)
   }
 
   function validate() {
@@ -52,13 +98,16 @@ export default function EditPerfilScreen() {
       if (!user) return
 
       let avatar_url = profile?.avatar_url
-      if (avatarUri) {
-        const ext = avatarUri.split('.').pop()
+
+      if (localAvatarUri) {
+        const ext = localAvatarUri.split('.').pop()
         const path = `${user.id}/avatar.${ext}`
-        const blob = await (await fetch(avatarUri)).blob()
+        const blob = await (await fetch(localAvatarUri)).blob()
         await supabase.storage.from('avatars').upload(path, blob, { upsert: true })
         const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
         avatar_url = publicUrl
+      } else if (presetAvatarUrl) {
+        avatar_url = presetAvatarUrl
       }
 
       const { error } = await supabase.from('profiles').update({
@@ -84,6 +133,8 @@ export default function EditPerfilScreen() {
     }
   }
 
+  const visibleAvatars = PRESET_AVATARS.filter(a => a.style === activeStyle)
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
@@ -95,12 +146,14 @@ export default function EditPerfilScreen() {
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
         {/* Avatar */}
         <View style={styles.avatarSection}>
-          <Avatar
-            name={`${nom} ${cognoms}`}
-            uri={avatarUri ?? profile?.avatar_url}
-            size="2xl"
+          <Avatar name={`${nom} ${cognoms}`} uri={currentAvatarUri} size="2xl" />
+          <Button
+            label="Canviar avatar"
+            variant="secondary"
+            size="sm"
+            onPress={() => setShowAvatarPicker(true)}
+            style={{ marginTop: spacing[2] }}
           />
-          <Button label="Canviar foto" variant="secondary" size="sm" onPress={pickAvatar} style={{ marginTop: spacing[2] }} />
         </View>
 
         <Input label="Nom *" value={nom} onChangeText={setNom} placeholder="El teu nom" error={errors.nom} />
@@ -134,17 +187,85 @@ export default function EditPerfilScreen() {
 
         <View style={{ height: spacing[8] }} />
       </ScrollView>
+
+      {/* Avatar picker modal */}
+      <Modal visible={showAvatarPicker} animationType="slide" onRequestClose={() => setShowAvatarPicker(false)}>
+        <SafeAreaView style={styles.pickerSafe} edges={['top']}>
+          <View style={styles.pickerHeader}>
+            <TouchableOpacity onPress={() => setShowAvatarPicker(false)}>
+              <Text style={styles.pickerClose}>✕</Text>
+            </TouchableOpacity>
+            <Text style={styles.pickerTitle}>Tria el teu avatar</Text>
+            <TouchableOpacity onPress={pickFromGallery}>
+              <Text style={styles.pickerGallery}>📷 Galeria</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Style tabs */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.styleTabs} contentContainerStyle={styles.styleTabsContent}>
+            {STYLES.map(s => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.styleTab, activeStyle === s && styles.styleTabActive]}
+                onPress={() => setActiveStyle(s)}
+              >
+                <Text style={[styles.styleTabText, activeStyle === s && styles.styleTabTextActive]}>
+                  {STYLE_LABELS[s]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <FlatList
+            data={visibleAvatars}
+            keyExtractor={item => item.url}
+            numColumns={AVATAR_COLS}
+            contentContainerStyle={styles.avatarGrid}
+            renderItem={({ item }) => {
+              const selected = item.url === presetAvatarUrl
+              return (
+                <TouchableOpacity
+                  onPress={() => selectPreset(item.url)}
+                  style={[styles.avatarCell, selected && styles.avatarCellSelected]}
+                  activeOpacity={0.75}
+                >
+                  <Image source={{ uri: item.url }} style={styles.avatarThumb} />
+                </TouchableOpacity>
+              )
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: colors.white },
-  header:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
-  headerTitle:  { ...typography.h3, color: colors.gray[900] },
-  form:         { padding: spacing.screenH, gap: spacing[4] },
-  avatarSection:{ alignItems: 'center', paddingVertical: spacing[4] },
-  sectionLabel: { ...typography.label, color: colors.gray[500], marginTop: spacing[2] },
-  toggle:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing[2] },
-  toggleLabel:  { ...typography.body, color: colors.gray[700], flex: 1, paddingRight: spacing[4] },
+  safe:             { flex: 1, backgroundColor: colors.white },
+  header:           { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
+  headerTitle:      { ...typography.h3, color: colors.gray[900] },
+  form:             { padding: spacing.screenH, gap: spacing[4] },
+  avatarSection:    { alignItems: 'center', paddingVertical: spacing[4] },
+  sectionLabel:     { ...typography.label, color: colors.gray[500], marginTop: spacing[2] },
+  toggle:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing[2] },
+  toggleLabel:      { ...typography.body, color: colors.gray[700], flex: 1, paddingRight: spacing[4] },
+
+  // Picker modal
+  pickerSafe:         { flex: 1, backgroundColor: colors.white },
+  pickerHeader:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
+  pickerClose:        { fontSize: 18, color: colors.gray[500], width: 44 },
+  pickerTitle:        { ...typography.h3, color: colors.gray[900] },
+  pickerGallery:      { ...typography.bodySm, color: colors.primary[600], fontWeight: '700' },
+
+  styleTabs:          { flexGrow: 0, borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
+  styleTabsContent:   { paddingHorizontal: spacing.screenH, gap: spacing[2], paddingVertical: spacing[2] },
+  styleTab:           { paddingHorizontal: spacing[3], paddingVertical: spacing[2], borderRadius: radius.full, backgroundColor: colors.gray[100] },
+  styleTabActive:     { backgroundColor: colors.primary[600] },
+  styleTabText:       { ...typography.bodySm, color: colors.gray[600], fontWeight: '600' },
+  styleTabTextActive: { color: colors.white },
+
+  avatarGrid:   { padding: spacing.screenH, gap: AVATAR_GAP },
+  avatarCell:   { width: AVATAR_SIZE, height: AVATAR_SIZE, borderRadius: radius.md, overflow: 'hidden', borderWidth: 2, borderColor: 'transparent' },
+  avatarCellSelected: { borderColor: colors.primary[600], ...shadows.sm },
+  avatarThumb:  { width: '100%', height: '100%', backgroundColor: colors.gray[100] },
 })

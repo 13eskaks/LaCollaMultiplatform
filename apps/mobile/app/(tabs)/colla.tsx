@@ -1,68 +1,76 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Image, ActivityIndicator } from 'react-native'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'expo-router'
+import { useState, useCallback } from 'react'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
-import { useAuthStore } from '@/stores/auth'
+import { useScreenCache } from '@/stores/screenCache'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
-import { Badge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
 
-function tempsRelatiu(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 60) return `fa ${mins}m`
-  const h = Math.floor(mins / 60)
-  if (h < 24) return `fa ${h}h`
-  return `fa ${Math.floor(h / 24)} dies`
-}
-
 const MODULS = [
-  { icon: '📢', label: 'Anuncis', sublabel: null, route: (id: string) => `/colla/${id}/anuncis`, available: true },
-  { icon: '🗳️', label: 'Votacions', sublabel: null, route: (id: string) => `/colla/${id}/votacions`, available: true },
-  { icon: '🧹', label: 'Torns', sublabel: null, route: (id: string) => `/colla/${id}/torns`, available: true },
-  { icon: '👥', label: 'Membres', sublabel: null, route: (id: string) => `/colla/${id}/membres`, available: true },
-  { icon: '💶', label: 'Caixa', sublabel: null, route: (id: string) => `/colla/${id}/caixa`, available: true },
-  { icon: '📋', label: 'Quotes', sublabel: null, route: (id: string) => `/colla/${id}/quotes`, available: true },
-  { icon: '📸', label: 'Fotos', sublabel: null, route: (id: string) => `/colla/${id}/fotos`, available: true },
-  { icon: '🏛', label: 'Actes', sublabel: null, route: (id: string) => `/colla/${id}/actes`, available: true },
-  { icon: '🏷️', label: 'Pressupost', sublabel: null, route: (id: string) => `/colla/${id}/pressupost`, available: true },
-  { icon: '🔗', label: 'Connexions', sublabel: null, route: (id: string) => `/colla/${id}/connexions`, available: true },
+  { key: 'anuncis',    icon: '📢', label: 'Anuncis',    route: (id: string) => `/colla/${id}/anuncis` },
+  { key: 'votacions',  icon: '🗳️', label: 'Votacions',  route: (id: string) => `/colla/${id}/votacions` },
+  { key: 'torns',      icon: '🧹', label: 'Torns',      route: (id: string) => `/colla/${id}/torns` },
+  { key: 'llocs',      icon: '📍', label: 'Llocs',      route: (id: string) => `/colla/${id}/llocs` },
+  { key: 'membres',    icon: '👥', label: 'Membres',    route: (id: string) => `/colla/${id}/membres` },
+  { key: 'caixa',      icon: '💶', label: 'Caixa',      route: (id: string) => `/colla/${id}/caixa` },
+  { key: 'tricount',   icon: '🧾', label: 'Tricount',   route: (id: string) => `/colla/${id}/tricount` },
+  { key: 'quotes',     icon: '📋', label: 'Quotes',     route: (id: string) => `/colla/${id}/quotes` },
+  { key: 'fotos',      icon: '📸', label: 'Fotos',      route: (id: string) => `/colla/${id}/fotos` },
+  { key: 'actes',      icon: '🏛', label: 'Actes',      route: (id: string) => `/colla/${id}/actes` },
+  { key: 'pressupost', icon: '🏷️', label: 'Pressupost', route: (id: string) => `/colla/${id}/pressupost` },
+  { key: 'connexions', icon: '🔗', label: 'Connexions', route: (id: string) => `/colla/${id}/connexions` },
 ]
 
 export default function CollaScreen() {
   const router = useRouter()
-  const { collaActiva, isComissioActiva } = useCollaStore()
+  const { t } = useTranslation()
+  const { collaActiva, isComissioActiva, loadColles } = useCollaStore()
+  const screenCache = useScreenCache()
   const [stats, setStats] = useState({ membres: 0, events: 0 })
-  const [anuncis, setAnuncis] = useState<any[]>([])
+  const [pendentsCount, setPendentsCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [modulsActius, setModulsActius] = useState<string[]>(MODULS.map(m => m.key))
+  const [modulsComissio, setModulsComissio] = useState<string[]>([])
 
-  useEffect(() => {
-    if (collaActiva) loadData()
-  }, [collaActiva])
+  useFocusEffect(useCallback(() => {
+    loadColles()
+    if (!collaActiva) return
+    const cacheKey = `colla_${collaActiva.id}`
+    if (!screenCache.isStale(cacheKey) && !loading) return
+    loadData()
+  }, [collaActiva?.id]))
 
   async function loadData() {
     if (!collaActiva) return
-    setLoading(true)
+    const cacheKey = `colla_${collaActiva.id}`
+    screenCache.touch(cacheKey)
+    if (stats.membres === 0) setLoading(true)
 
-    const [membresRes, eventsRes, anuncisRes] = await Promise.all([
+    const queries: PromiseLike<any>[] = [
       supabase.from('colla_membres').select('id', { count: 'exact', head: true }).eq('colla_id', collaActiva.id).eq('estat', 'actiu'),
       supabase.from('events').select('id', { count: 'exact', head: true }).eq('colla_id', collaActiva.id),
-      supabase.from('anuncis').select('*, profiles(nom)').eq('colla_id', collaActiva.id)
-        .order('fixat', { ascending: false }).order('created_at', { ascending: false }).limit(3),
-    ])
+      supabase.from('colla_config').select('moduls_actius, moduls_comissio').eq('colla_id', collaActiva.id).single(),
+    ]
+    if (isComissioActiva()) {
+      queries.push(supabase.from('colla_membres').select('id', { count: 'exact', head: true }).eq('colla_id', collaActiva.id).eq('estat', 'pendent'))
+    }
+    const [membresRes, eventsRes, configRes, pendentsRes] = await Promise.all(queries)
 
     setStats({ membres: membresRes.count ?? 0, events: eventsRes.count ?? 0 })
-    setAnuncis(anuncisRes.data ?? [])
+    if (configRes.data?.moduls_actius) setModulsActius(configRes.data.moduls_actius)
+    setModulsComissio(configRes.data?.moduls_comissio ?? [])
+    if (pendentsRes) setPendentsCount(pendentsRes.count ?? 0)
     setLoading(false)
   }
 
   if (!collaActiva) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <EmptyState icon="🌩" title="No pertanys a cap colla" subtitle="Crea o uneix-te a una colla per continuar" />
+        <EmptyState icon="🌩" title={t('colla.tab.noGroup')} subtitle={t('colla.tab.noGroup.sub')} />
       </SafeAreaView>
     )
   }
@@ -89,6 +97,11 @@ export default function CollaScreen() {
               {isComissioActiva() && (
                 <TouchableOpacity style={styles.settingsBtn} onPress={() => router.push(`/colla/${collaActiva.id}/settings` as any)}>
                   <Text style={{ fontSize: 18 }}>⚙️</Text>
+                  {pendentsCount > 0 && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{pendentsCount > 9 ? '9+' : pendentsCount}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               )}
             </View>
@@ -108,88 +121,56 @@ export default function CollaScreen() {
         </View>
 
         {/* Stats */}
-        {!loading && (
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{stats.membres}</Text>
-              <Text style={styles.statLabel}>Membres</Text>
-            </View>
-            <View style={styles.statDivider} />
-            {anysFundacio && (
-              <>
-                <View style={styles.statItem}>
-                  <Text style={styles.statNum}>{anysFundacio}</Text>
-                  <Text style={styles.statLabel}>Anys</Text>
-                </View>
-                <View style={styles.statDivider} />
-              </>
-            )}
-            <View style={styles.statItem}>
-              <Text style={styles.statNum}>{stats.events}</Text>
-              <Text style={styles.statLabel}>Events</Text>
-            </View>
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            {loading && stats.membres === 0
+              ? <ActivityIndicator size="small" color={colors.primary[600]} />
+              : <Text style={styles.statNum}>{stats.membres}</Text>
+            }
+            <Text style={styles.statLabel}>{t('colla.tab.members')}</Text>
           </View>
-        )}
-
-        {/* Mòduls */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Mòduls</Text>
-          <View style={styles.grid}>
-            {MODULS.map(modul => (
-              <TouchableOpacity
-                key={modul.label}
-                style={[styles.modulCard, !modul.available && styles.modulCardDisabled]}
-                onPress={() => modul.available && router.push(modul.route(collaActiva.id) as any)}
-                activeOpacity={modul.available ? 0.7 : 1}
-              >
-                <Text style={styles.modulIcon}>{modul.icon}</Text>
-                <Text style={[styles.modulLabel, !modul.available && styles.modulLabelDisabled]}>
-                  {modul.label}
-                </Text>
-                {!modul.available && <Text style={styles.comingSoon}>Pròximament</Text>}
-              </TouchableOpacity>
-            ))}
+          <View style={styles.statDivider} />
+          {!!anysFundacio && (
+            <>
+              <View style={styles.statItem}>
+                <Text style={styles.statNum}>{anysFundacio}</Text>
+                <Text style={styles.statLabel}>{t('colla.tab.years')}</Text>
+              </View>
+              <View style={styles.statDivider} />
+            </>
+          )}
+          <View style={styles.statItem}>
+            {loading && stats.events === 0
+              ? <ActivityIndicator size="small" color={colors.primary[600]} />
+              : <Text style={styles.statNum}>{stats.events}</Text>
+            }
+            <Text style={styles.statLabel}>{t('colla.tab.events')}</Text>
           </View>
         </View>
 
-        {/* Anuncis recents */}
+        {/* Mòduls */}
         <View style={styles.section}>
-          <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>Anuncis recents</Text>
-            <TouchableOpacity onPress={() => router.push(`/colla/${collaActiva.id}/anuncis` as any)}>
-              <Text style={styles.seeAll}>Veure tots</Text>
-            </TouchableOpacity>
+          <Text style={styles.sectionTitle}>{t('colla.tab.modules')}</Text>
+          <View style={styles.grid}>
+            {MODULS.filter(m => {
+              if (!modulsActius.includes(m.key)) return false
+              if (modulsComissio.includes(m.key) && !isComissioActiva()) return false
+              return true
+            }).map(modul => (
+              <TouchableOpacity
+                key={modul.key}
+                style={styles.modulCard}
+                onPress={() => router.push(modul.route(collaActiva.id) as any)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.modulIcon}>{modul.icon}</Text>
+                <Text style={styles.modulLabel}>{t(`modul.${modul.key}`)}</Text>
+                {modulsComissio.includes(modul.key) && (
+                  <Text style={styles.modulComissioTag}>{t('colla.tab.commission')}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
-
-          {loading ? (
-            <ActivityIndicator color={colors.primary[600]} />
-          ) : anuncis.length === 0 ? (
-            <Text style={styles.emptyText}>Cap anunci de moment</Text>
-          ) : (
-            <View style={styles.anuncisCard}>
-              {anuncis.map((a, idx) => (
-                <View key={a.id}>
-                  <TouchableOpacity style={styles.anunciRow} onPress={() => router.push(`/colla/${collaActiva.id}/anuncis` as any)}>
-                    <View style={{ flex: 1, gap: 4 }}>
-                      <View style={styles.anunciHeader}>
-                        <Text style={styles.anunciAutor}>{a.profiles?.nom ?? 'Anònim'}</Text>
-                        {a.fixat && <Badge label="📌 Fixat" variant="primary" size="sm" />}
-                        <Text style={styles.anunciTime}>{tempsRelatiu(a.created_at)}</Text>
-                      </View>
-                      <Text style={styles.anunciText} numberOfLines={3}>{a.cos}</Text>
-                    </View>
-                  </TouchableOpacity>
-                  {idx < anuncis.length - 1 && <View style={styles.divider} />}
-                </View>
-              ))}
-            </View>
-          )}
-
-          {isComissioActiva() && (
-            <TouchableOpacity style={styles.fab} onPress={() => router.push(`/colla/${collaActiva.id}/anuncis/create` as any)}>
-              <Text style={styles.fabText}>+ Nou anunci</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         <View style={{ height: spacing[8] }} />
@@ -207,6 +188,8 @@ const styles = StyleSheet.create({
   heroContent:        { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: spacing[4] },
   heroTop:            { position: 'absolute', top: spacing[2], left: spacing.screenH, right: spacing.screenH, flexDirection: 'row', justifyContent: 'space-between' },
   settingsBtn:        { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center' },
+  badge:              { position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: colors.danger[500], justifyContent: 'center', alignItems: 'center', paddingHorizontal: 3 },
+  badgeText:          { color: colors.white, fontSize: 9, fontWeight: '800' },
   collaAvatar:        { marginBottom: spacing[2] },
   collaNom:           { ...typography.h1, color: colors.white, textAlign: 'center' },
   collaLocalitat:     { ...typography.caption, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
@@ -227,18 +210,8 @@ const styles = StyleSheet.create({
   modulCardDisabled:  { opacity: 0.5 },
   modulIcon:          { fontSize: 30 },
   modulLabel:         { ...typography.bodySm, color: colors.gray[800], fontWeight: '600', textAlign: 'center' },
+  modulComissioTag:   { fontSize: 9, fontWeight: '700', color: colors.primary[600], backgroundColor: colors.primary[50], paddingHorizontal: 6, paddingVertical: 2, borderRadius: 99 },
   modulLabelDisabled: { color: colors.gray[400] },
   comingSoon:         { ...typography.caption, color: colors.gray[400], fontSize: 10 },
 
-  anuncisCard:        { backgroundColor: colors.white, borderRadius: radius.md, ...shadows.sm, overflow: 'hidden' },
-  anunciRow:          { padding: spacing[4] },
-  anunciHeader:       { flexDirection: 'row', alignItems: 'center', gap: spacing[2], marginBottom: spacing[1] },
-  anunciAutor:        { ...typography.label, color: colors.gray[700] },
-  anunciTime:         { ...typography.caption, color: colors.gray[400], marginLeft: 'auto' },
-  anunciText:         { ...typography.body, color: colors.gray[600], lineHeight: 20 },
-  divider:            { height: 1, backgroundColor: colors.gray[100] },
-  emptyText:          { ...typography.body, color: colors.gray[400], textAlign: 'center', paddingVertical: spacing[4] },
-
-  fab:                { marginTop: spacing[3], backgroundColor: colors.primary[600], borderRadius: radius.md, paddingVertical: spacing[3], alignItems: 'center' },
-  fabText:            { ...typography.body, color: colors.white, fontWeight: '600' },
 })

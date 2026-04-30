@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { View, Text, StyleSheet, Switch, Alert } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/Input'
 
 export default function CreateForumFilScreen() {
   const router = useRouter()
+  const { global: globalParam } = useLocalSearchParams<{ global?: string }>()
+  const isGlobal = globalParam === '1'
   const { collaActiva, isComissioActiva } = useCollaStore()
   const [titol, setTitol] = useState('')
   const [cos, setCos] = useState('')
@@ -26,14 +28,14 @@ export default function CreateForumFilScreen() {
   }
 
   async function handleCrear() {
-    if (!validate() || !collaActiva) return
+    if (!validate() || (!isGlobal && !collaActiva)) return
     setLoading(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
       const { data: fil, error } = await supabase.from('forum_fils').insert({
-        colla_id: collaActiva.id,
+        colla_id: isGlobal ? null : collaActiva!.id,
         creador_id: user.id,
         titol: titol.trim(),
         fixat: isComissioActiva() ? fixat : false,
@@ -65,6 +67,11 @@ export default function CreateForumFilScreen() {
       </View>
 
       <View style={styles.form}>
+        <View style={styles.contextBadge}>
+          <Text style={styles.contextText}>
+            {isGlobal ? '🌐 Publicant al fòrum global' : `📣 Publicant a ${collaActiva?.nom ?? 'la colla'}`}
+          </Text>
+        </View>
         <Input
           label="Títol *"
           value={titol}
@@ -103,10 +110,12 @@ export default function CreateForumFilScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe:        { flex: 1, backgroundColor: colors.white },
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
-  headerTitle: { ...typography.h3, color: colors.gray[900] },
-  form:        { padding: spacing.screenH, gap: spacing[4] },
-  toggle:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing[2] },
-  toggleLabel: { ...typography.body, color: colors.gray[700], flex: 1, paddingRight: spacing[4] },
+  safe:          { flex: 1, backgroundColor: colors.white },
+  header:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
+  headerTitle:   { ...typography.h3, color: colors.gray[900] },
+  form:          { padding: spacing.screenH, gap: spacing[4] },
+  contextBadge:  { backgroundColor: colors.primary[50], borderRadius: 8, paddingHorizontal: spacing[3], paddingVertical: spacing[2] },
+  contextText:   { ...typography.bodySm, color: colors.primary[700], fontWeight: '600' },
+  toggle:        { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing[2] },
+  toggleLabel:   { ...typography.body, color: colors.gray[700], flex: 1, paddingRight: spacing[4] },
 })

@@ -1,6 +1,6 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Modal } from 'react-native'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
@@ -29,8 +29,9 @@ export default function MembresScreen() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('Tots')
   const [query, setQuery] = useState('')
+  const [rolModal, setRolModal] = useState<{ id: string; nom: string } | null>(null)
 
-  useEffect(() => { loadMembres() }, [collaId])
+  useFocusEffect(useCallback(() => { loadMembres() }, [collaId]))
 
   async function loadMembres() {
     setLoading(true)
@@ -46,16 +47,18 @@ export default function MembresScreen() {
   }
 
   async function aprovar(membreId: string) {
-    await supabase.functions.invoke('aprovar-membre', {
-      body: { membre_id: membreId, accio: 'aprovar' },
-    })
+    await supabase.from('colla_membres').update({ estat: 'actiu', data_ingres: new Date().toISOString() }).eq('id', membreId)
     loadMembres()
   }
 
   async function rebutjar(membreId: string) {
-    await supabase.functions.invoke('aprovar-membre', {
-      body: { membre_id: membreId, accio: 'rebutjar' },
-    })
+    await supabase.from('colla_membres').delete().eq('id', membreId)
+    loadMembres()
+  }
+
+  async function canviarRol(membreId: string, rol: string) {
+    await supabase.from('colla_membres').update({ rol }).eq('id', membreId)
+    setRolModal(null)
     loadMembres()
   }
 
@@ -154,17 +157,37 @@ export default function MembresScreen() {
               <Avatar name={`${m.profiles?.nom ?? ''} ${m.profiles?.cognoms ?? ''}`} uri={m.profiles?.avatar_url} size="md" />
               <View style={{ flex: 1 }}>
                 <Text style={styles.membreNom}>{m.profiles?.nom} {m.profiles?.cognoms}</Text>
-                <Text style={styles.membreMeta}>
-                  Membre des de {new Date(m.data_ingres).getFullYear()}
-                </Text>
+                <Text style={styles.membreMeta}>Membre des de {new Date(m.data_ingres).getFullYear()}</Text>
               </View>
-              {isComissio(m.rol) && <Badge label={ROL_CONFIG[m.rol]?.label ?? m.rol} variant={ROL_CONFIG[m.rol]?.variant ?? 'default'} size="sm" />}
+              {isComissioActiva() ? (
+                <TouchableOpacity onPress={() => setRolModal({ id: m.id, nom: `${m.profiles?.nom ?? ''}` })} style={styles.rolBtn}>
+                  <Text style={styles.rolBtnText}>{ROL_CONFIG[m.rol]?.label ?? m.rol}</Text>
+                </TouchableOpacity>
+              ) : (
+                isComissio(m.rol) && <Badge label={ROL_CONFIG[m.rol]?.label ?? m.rol} variant={ROL_CONFIG[m.rol]?.variant ?? 'default'} size="sm" />
+              )}
             </View>
           ))}
 
           <View style={{ height: spacing[8] }} />
         </ScrollView>
       )}
+
+      <Modal visible={!!rolModal} transparent animationType="slide" onRequestClose={() => setRolModal(null)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setRolModal(null)}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>Rol de {rolModal?.nom}</Text>
+            {Object.entries(ROL_CONFIG).map(([rol, cfg]) => (
+              <TouchableOpacity key={rol} style={styles.modalOption} onPress={() => canviarRol(rolModal!.id, rol)}>
+                <Text style={styles.modalOptionText}>{cfg.label}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setRolModal(null)}>
+              <Text style={styles.modalCancelText}>Cancel·lar</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   )
 }
@@ -194,4 +217,13 @@ const styles = StyleSheet.create({
   rebutjarBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.gray[200], justifyContent: 'center', alignItems: 'center' },
   rebutjarText:{ color: colors.gray[600], fontWeight: '700' },
   emptyText:   { ...typography.body, color: colors.gray[400], textAlign: 'center', paddingVertical: spacing[6] },
+  rolBtn:      { backgroundColor: colors.gray[100], borderRadius: radius.sm, paddingHorizontal: spacing[2], paddingVertical: 4 },
+  rolBtnText:  { ...typography.caption, color: colors.gray[600], fontWeight: '600' },
+  modalOverlay:{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalSheet:  { backgroundColor: colors.white, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: spacing[6], gap: spacing[2] },
+  modalTitle:  { ...typography.h3, color: colors.gray[900], marginBottom: spacing[2] },
+  modalOption: { paddingVertical: spacing[3], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
+  modalOptionText: { ...typography.body, color: colors.gray[800] },
+  modalCancel: { paddingVertical: spacing[3], alignItems: 'center', marginTop: spacing[2] },
+  modalCancelText: { ...typography.body, color: colors.danger[500], fontWeight: '600' },
 })

@@ -13,6 +13,15 @@ config.resolver.nodeModulesPaths = [
   path.resolve(monorepoRoot, 'node_modules'),
 ];
 
+// Redirect stale expo/AppEntry bundle requests to expo-router/entry
+const originalRewriteUrl = config.server.rewriteRequestUrl;
+config.server.rewriteRequestUrl = (url) => {
+  if (url.includes('/node_modules/expo/AppEntry')) {
+    url = url.replace('/node_modules/expo/AppEntry', '/node_modules/expo-router/entry');
+  }
+  return originalRewriteUrl ? originalRewriteUrl(url) : url;
+};
+
 // Force react to always resolve from mobile (React 19), not root (React 18)
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'react' || moduleName.startsWith('react/')) {

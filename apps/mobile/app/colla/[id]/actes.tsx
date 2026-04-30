@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Alert } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useState, useCallback, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
@@ -8,11 +8,14 @@ import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { ScreenHeader } from '@/components/ui/ScreenHeader'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { RichBodyEditor, RichBodyView, uploadBlocks, makeTextBlock, blocksFromSaved } from '@/components/ui/RichBody'
+import type { RichBlock, SavedBlock } from '@/components/ui/RichBody'
 
-type ScreenView = 'list' | 'detail' | 'create'
+type ScreenView = 'list' | 'detail' | 'create' | 'edit'
 
 export default function ActesScreen() {
-  const { id: collaId } = useLocalSearchParams<{ id: string }>()
+  const { id: collaId, actaId } = useLocalSearchParams<{ id: string; actaId?: string }>()
   const router = useRouter()
   const { isComissioActiva } = useCollaStore()
   const [actes, setActes] = useState<any[]>([])
@@ -22,11 +25,17 @@ export default function ActesScreen() {
 
   // Create form state
   const [titol, setTitol] = useState('')
-  const [contingut, setContingut] = useState('')
-  const [dataActa, setDataActa] = useState(new Date().toISOString().slice(0, 10))
+  const [blocks, setBlocks] = useState<RichBlock[]>([makeTextBlock()])
+  const [dataActa, setDataActa] = useState<Date>(new Date())
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { loadActes() }, [collaId])
+  useFocusEffect(useCallback(() => { loadActes() }, [collaId]))
+
+  useEffect(() => {
+    if (!actaId || actes.length === 0) return
+    const found = actes.find(a => a.id === actaId)
+    if (found && viewMode === 'list') { setSelected(found); setViewMode('detail') }
+  }, [actaId, actes])
 
   async function loadActes() {
     setLoading(true)
@@ -40,25 +49,64 @@ export default function ActesScreen() {
   }
 
   async function handleCreate() {
-    if (!titol.trim() || !contingut.trim()) {
+    const hasContent = blocks.some(b =>
+      (b.type === 'text' && b.content.trim()) || (b.type === 'image' && (b.uri || b.url))
+    )
+    if (!titol.trim() || !hasContent) {
       Alert.alert('Error', 'El títol i el contingut són obligatoris')
       return
     }
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
-    const { error } = await supabase.from('actes').insert({
+    const { data: acta, error } = await supabase.from('actes').insert({
       colla_id: collaId,
       autor_id: user?.id,
       titol: titol.trim(),
-      contingut: contingut.trim(),
-      data_acta: dataActa,
-    })
+      contingut: null,
+      data_acta: dataActa.toISOString().slice(0, 10),
+    }).select('id').single()
+    if (!error && acta) {
+      const saved = await uploadBlocks(blocks, 'acta', acta.id)
+      await supabase.from('actes').update({ contingut_blocks: saved }).eq('id', acta.id)
+    }
     setSaving(false)
     if (error) {
       Alert.alert('Error', error.message)
     } else {
       setTitol('')
-      setContingut('')
+      setBlocks([makeTextBlock()])
+      setViewMode('list')
+      loadActes()
+    }
+  }
+
+  function openEdit(acta: any) {
+    setTitol(acta.titol ?? '')
+    setDataActa(new Date(acta.data_acta + 'T00:00:00'))
+    if (acta.contingut_blocks) setBlocks(blocksFromSaved(acta.contingut_blocks))
+    else if (acta.contingut) setBlocks([makeTextBlock(acta.contingut)])
+    else setBlocks([makeTextBlock()])
+    setSelected(acta)
+    setViewMode('edit')
+  }
+
+  async function handleEdit() {
+    if (!selected) return
+    if (!titol.trim()) {
+      Alert.alert('Error', 'El títol és obligatori')
+      return
+    }
+    setSaving(true)
+    const saved = await uploadBlocks(blocks, 'acta', selected.id)
+    const { error } = await supabase.from('actes').update({
+      titol: titol.trim(),
+      data_acta: dataActa.toISOString().slice(0, 10),
+      contingut_blocks: saved,
+    }).eq('id', selected.id)
+    setSaving(false)
+    if (error) {
+      Alert.alert('Error', error.message)
+    } else {
       setViewMode('list')
       loadActes()
     }
@@ -83,12 +131,10 @@ export default function ActesScreen() {
         <ScreenHeader title="Nova acta" leftAction={{ label: '←', onPress: () => setViewMode('list') }} />
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.card}>
-            <Text style={styles.label}>Data de la reunió</Text>
-            <TextInput
-              style={styles.input}
+            <DatePicker
+              label="Data de la reunió"
               value={dataActa}
-              onChangeText={setDataActa}
-              placeholder="AAAA-MM-DD"
+              onChange={setDataActa}
             />
             <Text style={[styles.label, { marginTop: spacing[3] }]}>Títol</Text>
             <TextInput
@@ -98,17 +144,37 @@ export default function ActesScreen() {
               placeholder="Reunió ordinària de..."
             />
             <Text style={[styles.label, { marginTop: spacing[3] }]}>Contingut</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={contingut}
-              onChangeText={setContingut}
-              placeholder="Acords, punts tractats..."
-              multiline
-              numberOfLines={10}
-              textAlignVertical="top"
-            />
+            <RichBodyEditor blocks={blocks} onChange={setBlocks} placeholder="Acords, punts tractats..." minHeight={160} />
           </View>
           <Button label="Crear acta" size="lg" loading={saving} onPress={handleCreate} />
+          <View style={{ height: spacing[8] }} />
+        </ScrollView>
+      </SafeAreaView>
+    )
+  }
+
+  if (viewMode === 'edit') {
+    return (
+      <SafeAreaView style={styles.safe} edges={['top']}>
+        <ScreenHeader title="Editar acta" leftAction={{ label: '←', onPress: () => setViewMode('detail') }} />
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.card}>
+            <DatePicker
+              label="Data de la reunió"
+              value={dataActa}
+              onChange={setDataActa}
+            />
+            <Text style={[styles.label, { marginTop: spacing[3] }]}>Títol</Text>
+            <TextInput
+              style={styles.input}
+              value={titol}
+              onChangeText={setTitol}
+              placeholder="Reunió ordinària de..."
+            />
+            <Text style={[styles.label, { marginTop: spacing[3] }]}>Contingut</Text>
+            <RichBodyEditor blocks={blocks} onChange={setBlocks} placeholder="Acords, punts tractats..." minHeight={160} />
+          </View>
+          <Button label="Guardar canvis" size="lg" loading={saving} onPress={handleEdit} />
           <View style={{ height: spacing[8] }} />
         </ScrollView>
       </SafeAreaView>
@@ -121,15 +187,27 @@ export default function ActesScreen() {
         <ScreenHeader
           title={selected.titol}
           leftAction={{ label: '←', onPress: () => setViewMode('list') }}
-          rightAction={isComissioActiva() ? { label: 'Eliminar', onPress: () => handleDelete(selected) } : undefined}
+          rightAction={isComissioActiva() ? { label: 'Editar', onPress: () => openEdit(selected) } : undefined}
         />
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.actaDate}>
             {new Date(selected.data_acta).toLocaleDateString('ca-ES', { day: 'numeric', month: 'long', year: 'numeric' })}
           </Text>
           <View style={styles.card}>
-            <Text style={styles.contingut}>{selected.contingut}</Text>
+            {selected.contingut_blocks
+              ? <RichBodyView blocks={selected.contingut_blocks as SavedBlock[]} textStyle={styles.contingut} />
+              : <Text style={styles.contingut}>{selected.contingut}</Text>
+            }
           </View>
+          {isComissioActiva() && (
+            <Button
+              label="Eliminar acta"
+              variant="secondary"
+              size="md"
+              onPress={() => handleDelete(selected)}
+              style={{ borderColor: colors.danger[400] }}
+            />
+          )}
           <View style={{ height: spacing[8] }} />
         </ScrollView>
       </SafeAreaView>

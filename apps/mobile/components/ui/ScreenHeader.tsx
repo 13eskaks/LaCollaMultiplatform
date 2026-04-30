@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native'
-import { ReactNode } from 'react'
+import { ReactElement } from 'react'
 import { useRouter } from 'expo-router'
 import { colors, typography, spacing, shadows } from '@/theme'
 
@@ -8,7 +8,7 @@ interface ScreenHeaderProps {
   onBack?: () => void
   leftAction?: { label: string; onPress?: () => void }
   rightAction?: { label: string; onPress: () => void }
-  right?: ReactNode
+  right?: ReactElement | null
   style?: ViewStyle
   shadow?: boolean
 }
@@ -28,11 +28,11 @@ export function ScreenHeader({ title, onBack, leftAction, rightAction, right, st
       <Text style={styles.title} numberOfLines={1}>{title}</Text>
 
       <View style={styles.side}>
-        {right ?? (rightAction && (
+        {right ?? (rightAction ? (
           <TouchableOpacity onPress={rightAction.onPress}>
             <Text style={styles.actionText}>{rightAction.label}</Text>
           </TouchableOpacity>
-        ))}
+        ) : null)}
       </View>
     </View>
   )

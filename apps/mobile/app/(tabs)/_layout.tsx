@@ -1,12 +1,16 @@
 import { useEffect } from 'react'
 import { Tabs, useRouter } from 'expo-router'
-import { Text } from 'react-native'
+import { Text, Image, View } from 'react-native'
+import { useTranslation } from 'react-i18next'
 import { useCollaStore } from '@/stores/colla'
+import { useAuthStore } from '@/stores/auth'
 import { colors } from '@/theme'
 
 export default function TabsLayout() {
   const router = useRouter()
-  const { colles, loading } = useCollaStore()
+  const { t } = useTranslation()
+  const { colles, loading, collaActiva } = useCollaStore()
+  const { profile } = useAuthStore()
 
   useEffect(() => {
     if (!loading && colles.length === 0) {
@@ -32,36 +36,54 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inici',
+          title: t('tabs.home'),
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🏠</Text>,
         }}
       />
       <Tabs.Screen
         name="agenda"
         options={{
-          title: 'Agenda',
+          title: t('tabs.agenda'),
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>📅</Text>,
         }}
       />
       <Tabs.Screen
         name="colla"
         options={{
-          title: 'Colla',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>🌩</Text>,
+          title: t('tabs.colla'),
+          tabBarIcon: ({ focused }) => collaActiva?.avatar_url ? (
+            <View style={{
+              width: 26, height: 26, borderRadius: 13, overflow: 'hidden',
+              borderWidth: 2, borderColor: focused ? colors.primary[600] : colors.gray[300],
+            }}>
+              <Image source={{ uri: collaActiva.avatar_url }} style={{ width: '100%', height: '100%' }} />
+            </View>
+          ) : (
+            <Text style={{ fontSize: 22, color: focused ? colors.primary[600] : colors.gray[400] }}>🌩</Text>
+          ),
         }}
       />
       <Tabs.Screen
         name="forum"
         options={{
-          title: 'Fòrum',
+          title: t('tabs.forum'),
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>💬</Text>,
         }}
       />
       <Tabs.Screen
         name="perfil"
         options={{
-          title: 'Perfil',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, color }}>👤</Text>,
+          title: t('tabs.perfil'),
+          tabBarIcon: ({ focused }) => profile?.avatar_url ? (
+            <View style={{
+              width: 26, height: 26, borderRadius: 13, overflow: 'hidden',
+              borderWidth: 2, borderColor: focused ? colors.primary[600] : colors.gray[300],
+            }}>
+              <Image source={{ uri: profile.avatar_url }} style={{ width: '100%', height: '100%' }} />
+            </View>
+          ) : (
+            <Text style={{ fontSize: 22, color: focused ? colors.primary[600] : colors.gray[400] }}>👤</Text>
+          ),
         }}
       />
     </Tabs>

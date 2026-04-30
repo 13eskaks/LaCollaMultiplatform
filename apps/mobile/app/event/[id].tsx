@@ -2,8 +2,8 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   ActivityIndicator, Linking, Alert, Image
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { formatData, formatHora } from '@lacolla/shared'
@@ -11,6 +11,9 @@ import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
+import { CarpoolingSection } from '@/components/ui/CarpoolingSection'
+import { RichBodyView } from '@/components/ui/RichBody'
+import type { SavedBlock } from '@/components/ui/RichBody'
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -22,8 +25,9 @@ export default function EventScreen() {
   const [rsvpLoading, setRsvpLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState<string | null>(null)
+  const [carpoolingKey, setCarpoolingKey] = useState(0)
 
-  useEffect(() => { loadEvent() }, [id])
+  useFocusEffect(useCallback(() => { loadEvent() }, [id]))
 
   async function loadEvent() {
     setLoading(true)
@@ -47,19 +51,33 @@ export default function EventScreen() {
   }
 
   async function handleRsvp(estat: string) {
-    if (!userId) return
+    if (!userId) {
+      router.push('/(auth)/register' as any)
+      return
+    }
     setRsvpLoading(true)
 
     if (myRsvp === estat) {
       await supabase.from('event_rsvp').delete().eq('event_id', id).eq('user_id', userId)
       setMyRsvp(null)
       setRsvps(r => r.filter(x => x.user_id !== userId))
+      // remove from any car for this event
+      const { data: cotxes } = await supabase.from('event_cotxes').select('id').eq('event_id', id)
+      const ids = cotxes?.map(c => c.id) ?? []
+      if (ids.length > 0) {
+        await supabase.from('event_cotxe_passatgers').delete().eq('user_id', userId).in('cotxe_id', ids)
+      }
+      setCarpoolingKey(k => k + 1)
     } else {
       await supabase.from('event_rsvp').upsert(
         { event_id: id, user_id: userId, estat },
         { onConflict: 'event_id,user_id' }
       )
       setMyRsvp(estat)
+      setRsvps(r => {
+        const filtered = r.filter(x => x.user_id !== userId)
+        return [...filtered, { user_id: userId, estat, profiles: null }]
+      })
     }
     setRsvpLoading(false)
   }
@@ -153,15 +171,25 @@ export default function EventScreen() {
 
             <View style={styles.infoRow}>
               <Text style={styles.infoIcon}>👥</Text>
-              <Text style={styles.infoText}>{apuntats.length} {apuntats.length === 1 ? 'persona apuntada' : 'persones apuntades'}</Text>
+              <View>
+                <Text style={styles.infoText}>{apuntats.length} {apuntats.length === 1 ? 'persona apuntada' : 'persones apuntades'}</Text>
+                {event.limit_places && (
+                  <Text style={styles.infoSub}>
+                    {Math.max(0, event.limit_places - apuntats.length)} places lliures de {event.limit_places}
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
 
           {/* Descripció */}
-          {event.descripcio && (
+          {(event.descripcio_blocks || event.descripcio) && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Descripció</Text>
-              <Text style={styles.descripcio}>{event.descripcio}</Text>
+              {event.descripcio_blocks
+                ? <RichBodyView blocks={event.descripcio_blocks as SavedBlock[]} textStyle={styles.descripcio} />
+                : <Text style={styles.descripcio}>{event.descripcio}</Text>
+              }
             </View>
           )}
 
@@ -188,12 +216,24 @@ export default function EventScreen() {
             </View>
           )}
 
+          {/* Desplaçaments */}
+          <CarpoolingSection
+            eventId={id}
+            userId={userId}
+            collaId={event?.colla_id}
+            refreshKey={carpoolingKey}
+            onJoinedCar={() => {
+              setMyRsvp('apuntat')
+              setRsvps(r => [...r.filter(x => x.user_id !== userId), { user_id: userId, estat: 'apuntat', profiles: null }])
+            }}
+          />
+
           {/* Accions comissió */}
           {isComissioActiva() && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Gestió (comissió)</Text>
               <View style={{ gap: spacing[2] }}>
-                <Button label="✏️ Editar event" variant="secondary" size="md" onPress={() => {}} />
+                <Button label="✏️ Editar event" variant="secondary" size="md" onPress={() => router.push({ pathname: '/event/create', params: { eventId: id } } as any)} />
                 <Button label="🗑 Eliminar event" variant="danger" size="md" onPress={handleDelete} />
               </View>
             </View>

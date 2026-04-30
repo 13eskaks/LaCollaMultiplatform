@@ -72,7 +72,7 @@ export default function PremiumIndividualScreen() {
 
         {/* CTA */}
         <Button
-          label="Comença 7 dies gratis →"
+          label="Comença 7 dies gratis"
           size="lg"
           variant="premium"
           onPress={() => {}}

@@ -9,6 +9,8 @@ import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { CityInput } from '@/components/ui/CityInput'
+import { YearPicker } from '@/components/ui/YearPicker'
 
 const COMARQUES = [
   'L\'Alacantí','L\'Alcalatén','L\'Alt Maestrat','L\'Alt Millars','L\'Alt Palància','L\'Alt Vinalopó',
@@ -79,7 +81,7 @@ export default function CreateCollaScreen() {
 
   async function pickImage(type: 'avatar' | 'portada') {
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: 'images',
       allowsEditing: true,
       aspect: type === 'avatar' ? [1, 1] : [16, 9],
       quality: 0.8,
@@ -98,10 +100,15 @@ export default function CreateCollaScreen() {
 
       // Generem l'ID al client per evitar problemes de RLS en el RETURNING
       const collaId = randomUUID()
+      const slug = nom.trim().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        + '-' + collaId.slice(0, 6)
 
       const { error } = await supabase.from('colles').insert({
         id: collaId,
         nom: nom.trim(),
+        slug,
         localitat: localitat.trim(),
         comarca: comarca || null,
         any_fundacio: anyFundacio ? parseInt(anyFundacio) : null,
@@ -111,24 +118,23 @@ export default function CreateCollaScreen() {
 
       if (error) throw error
 
-      // Crear config i membre en paral·lel
-      const [configRes, membreRes] = await Promise.all([
-        supabase.from('colla_config').insert({
-          colla_id: collaId,
-          aprovacio_manual: aprovacioManual,
-          perfil_public: perfilPublic,
-          qui_pot_crear_events: quiCreaEvents,
-          qui_pot_crear_votacions: quiCreaVotacions,
-        }),
-        supabase.from('colla_membres').insert({
-          colla_id: collaId,
-          user_id: user.id,
-          estat: 'actiu',
-          rol: 'president',
-        }),
-      ])
-      if (configRes.error) throw configRes.error
+      // Primer insertar el membre (president) perquè la RLS de colla_config ho requereix
+      const membreRes = await supabase.from('colla_membres').insert({
+        colla_id: collaId,
+        user_id: user.id,
+        estat: 'actiu',
+        rol: 'president',
+      })
       if (membreRes.error) throw membreRes.error
+
+      const configRes = await supabase.from('colla_config').upsert({
+        colla_id: collaId,
+        aprovacio_manual: aprovacioManual,
+        perfil_public: perfilPublic,
+        qui_pot_crear_events: quiCreaEvents,
+        qui_pot_crear_votacions: quiCreaVotacions,
+      })
+      if (configRes.error) throw configRes.error
 
       // Pujar imatges si n'hi ha
       if (avatarUri) {
@@ -140,9 +146,8 @@ export default function CreateCollaScreen() {
         await supabase.from('colles').update({ avatar_url: publicUrl }).eq('id', collaId)
       }
 
-      setCollaId(collaId)
       await loadColles()
-      setStep(2) // anar al pas d'invitar
+      router.replace('/(tabs)/' as any)
     } catch (e: any) {
       setErrors({ general: e.message })
     } finally {
@@ -154,12 +159,12 @@ export default function CreateCollaScreen() {
 
   const steps = [
     // PAS 1
-    <ScrollView key="1" contentContainerStyle={styles.stepScroll}>
+    <ScrollView key="1" contentContainerStyle={styles.stepScroll} keyboardShouldPersistTaps="handled">
       <Text style={styles.stepTitle}>Informació bàsica</Text>
       <View style={styles.stepForm}>
         <Input label="Nom de la colla *" value={nom} onChangeText={setNom} placeholder="Ex: Colla Fallera de l'Eixample" error={errors.nom} />
-        <Input label="Localitat *" value={localitat} onChangeText={setLocalitat} placeholder="Ex: València" error={errors.localitat} />
-        <Input label="Any de fundació" value={anyFundacio} onChangeText={setAnyFundacio} placeholder="Ex: 1985" keyboardType="number-pad" />
+        <CityInput label="Localitat *" value={localitat} onChangeText={setLocalitat} placeholder="Ex: València, Gràcia..." error={errors.localitat} />
+        <YearPicker label="Any de fundació" value={anyFundacio} onChange={setAnyFundacio} />
         <Input label="Descripció (opcional)" value={descripcio} onChangeText={setDescripcio} placeholder="Breu descripció de la colla..." multiline style={{ height: 80 }} />
         {errors.general && <Text style={styles.errorText}>{errors.general}</Text>}
       </View>
@@ -244,11 +249,11 @@ export default function CreateCollaScreen() {
   function handleNext() {
     if (step === 0 && !validateStep1()) return
     if (step === 1) { handleCreate(); return }
-    if (step === steps.length - 1) { router.replace('/(tabs)/'); return }
+    if (step === steps.length - 1) { router.replace('/(tabs)/' as any); return }
     setStep(s => s + 1)
   }
 
-  const btnLabel = step === 1 ? (loading ? 'Creant...' : 'Crear la colla! 🎉') : step === steps.length - 1 ? 'Anar a la colla →' : 'Continuar →'
+  const btnLabel = step === 1 ? (loading ? 'Creant...' : 'Crear la colla! 🎉') : step === steps.length - 1 ? 'Anar a la colla' : 'Continuar'
 
   return (
     <SafeAreaView style={styles.safe}>

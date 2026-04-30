@@ -35,7 +35,10 @@
               "host": "lacolla.app"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -46,20 +49,19 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#ffffff"
-        }
-      ]
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "updates": {
       "enabled": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8f88d71a-1392-438e-bbed-754e0bab4ad3"
+      }
     }
   }
 }

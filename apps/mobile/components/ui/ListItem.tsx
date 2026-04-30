@@ -1,4 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { colors, typography, spacing, radius } from '@/theme'
 
 interface ListItemProps {
@@ -25,7 +26,7 @@ export function ListItem({ icon, title, subtitle, right, onPress, style, chevron
         {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       </View>
       {right && <View style={styles.right}>{right}</View>}
-      {chevron && onPress && <Text style={styles.chevron}>›</Text>}
+      {chevron && onPress && <Ionicons name="chevron-forward" size={16} color={colors.gray[300]} />}
     </Wrapper>
   )
 }
@@ -38,5 +39,4 @@ const styles = StyleSheet.create({
   title:   { ...typography.body, color: colors.gray[800] },
   subtitle:{ ...typography.caption, color: colors.gray[400] },
   right:   { marginLeft: spacing[2] },
-  chevron: { fontSize: 20, color: colors.gray[300], marginLeft: spacing[1] },
 })

@@ -35,7 +35,7 @@ export default function CollesScreen() {
 
   function handleActivar(collaId: string) {
     setCollaActiva(collaId)
-    router.replace('/(tabs)/')
+    router.replace('/(tabs)/' as any)
   }
 
   return (
@@ -58,7 +58,7 @@ export default function CollesScreen() {
           const rol = colla.membership?.rol ?? 'membre'
           return (
             <View key={colla.id} style={[styles.card, isActive && styles.cardActive]}>
-              <View style={styles.cardTop}>
+              <TouchableOpacity style={styles.cardTop} onPress={() => router.push(`/colla/${colla.id}/landing` as any)}>
                 <Avatar name={colla.nom} uri={colla.avatar_url} size="lg" />
                 <View style={{ flex: 1 }}>
                   <View style={styles.cardTitleRow}>
@@ -68,7 +68,7 @@ export default function CollesScreen() {
                   {colla.localitat && <Text style={styles.collaMeta}>📍 {colla.localitat}</Text>}
                   <Badge label={rol} variant={rol === 'president' ? 'premium' : 'default'} size="sm" />
                 </View>
-              </View>
+              </TouchableOpacity>
 
               <View style={styles.cardActions}>
                 {!isActive && (

@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Alert } from 'react-native'
-import { useLocalSearchParams } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router'
+import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 export default function ConnexionsScreen() {
   const { id: collaId } = useLocalSearchParams<{ id: string }>()
+  const router = useRouter()
   const { isComissioActiva } = useCollaStore()
   const [connexions, setConnexions] = useState<any[]>([])
   const [pendents, setPendents] = useState<any[]>([])
@@ -20,7 +21,7 @@ export default function ConnexionsScreen() {
   const [searchResults, setSearchResults] = useState<any[]>([])
   const [searching, setSearching] = useState(false)
 
-  useEffect(() => { loadConnexions() }, [collaId])
+  useFocusEffect(useCallback(() => { loadConnexions() }, [collaId]))
 
   async function loadConnexions() {
     setLoading(true)
@@ -108,6 +109,12 @@ export default function ConnexionsScreen() {
       : connexio.colla_origen
   }
 
+  function getAltraCollaId(connexio: any) {
+    return connexio.colla_origen_id === collaId
+      ? connexio.colla_desti_id
+      : connexio.colla_origen_id
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScreenHeader title="Connexions" />
@@ -138,7 +145,7 @@ export default function ConnexionsScreen() {
                         <Text style={styles.resultNom}>{c.nom}</Text>
                         {c.localitat && <Text style={styles.resultLocalitat}>📍 {c.localitat}</Text>}
                       </View>
-                      <Text style={styles.connectarText}>Connectar →</Text>
+                      <Text style={styles.connectarText}>Connectar</Text>
                     </TouchableOpacity>
                     {idx < searchResults.length - 1 && <View style={styles.divider} />}
                   </View>
@@ -193,16 +200,17 @@ export default function ConnexionsScreen() {
             <View style={styles.card}>
               {connexions.map((c, idx) => {
                 const altra = getAltraColla(c)
+                const altraId = getAltraCollaId(c)
                 return (
                   <View key={c.id}>
-                    <View style={styles.connexioRow}>
+                    <TouchableOpacity style={styles.connexioRow} onPress={() => router.push(`/colla/${altraId}/landing` as any)}>
                       <Avatar name={altra?.nom ?? ''} uri={altra?.avatar_url} size="md" />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.connexioNom}>{altra?.nom}</Text>
                         {altra?.localitat && <Text style={styles.connexioLocalitat}>📍 {altra.localitat}</Text>}
                       </View>
                       <Badge label="Connectades" variant="success" size="sm" />
-                    </View>
+                    </TouchableOpacity>
                     {idx < connexions.length - 1 && <View style={styles.divider} />}
                   </View>
                 )

@@ -1,6 +1,6 @@
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { useState, useEffect } from 'react'
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native'
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
+import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
@@ -14,13 +14,13 @@ type Tab = typeof TABS[number]
 export default function VotacionsScreen() {
   const { id: collaId } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
-  const { isComissioActiva } = useCollaStore()
+  const { isComissioActiva, isMembreActiu } = useCollaStore()
   const [tab, setTab] = useState<Tab>('Actives')
   const [votacions, setVotacions] = useState<any[]>([])
   const [myVots, setMyVots] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { loadVotacions() }, [collaId, tab])
+  useFocusEffect(useCallback(() => { loadVotacions() }, [collaId, tab]))
 
   async function loadVotacions() {
     setLoading(true)
@@ -39,6 +39,17 @@ export default function VotacionsScreen() {
     setVotacions(votacionsRes.data ?? [])
     if (votsRes?.data) setMyVots(new Set(votsRes.data.map((v: any) => v.votacio_id)))
     setLoading(false)
+  }
+
+  async function handleDelete(v: any) {
+    Alert.alert('Eliminar votació', 'Estàs segur/a? S\'eliminaran tots els vots.', [
+      { text: 'Cancel·lar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+        const { error } = await supabase.from('votacions').delete().eq('id', v.id)
+        if (error) { Alert.alert('Error', error.message); return }
+        setVotacions(prev => prev.filter(x => x.id !== v.id))
+      }},
+    ])
   }
 
   const diesRestants = (dataLimit: string | null) => {
@@ -83,6 +94,11 @@ export default function VotacionsScreen() {
                   {!haVotat && tab === 'Actives' && (
                     <Badge label="Pendent" variant="warning" size="sm" />
                   )}
+                  {isComissioActiva() && (
+                    <TouchableOpacity onPress={() => handleDelete(v)} hitSlop={8}>
+                      <Text style={styles.deleteBtn}>🗑</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <View style={styles.cardMeta}>
@@ -103,7 +119,7 @@ export default function VotacionsScreen() {
         </ScrollView>
       )}
 
-      {isComissioActiva() && (
+      {isMembreActiu() && (
         <TouchableOpacity style={styles.fab} onPress={() => router.push(`/colla/${collaId}/votacions/create` as any)}>
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
@@ -125,6 +141,7 @@ const styles = StyleSheet.create({
   list:        { padding: spacing.screenH, gap: spacing[3] },
   card:        { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[4], gap: spacing[3], ...shadows.sm },
   cardTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing[2] },
+  deleteBtn:   { fontSize: 14, color: colors.gray[400] },
   pregunta:    { ...typography.h3, color: colors.gray[900], flex: 1 },
   cardMeta:    { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
   metaText:    { ...typography.bodySm, color: colors.gray[500] },

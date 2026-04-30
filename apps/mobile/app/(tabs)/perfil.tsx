@@ -1,11 +1,14 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
+import i18n from '@/lib/i18n'
 
 interface MenuItem {
   icon: string
@@ -22,13 +25,17 @@ interface MenuSection {
 
 export default function PerfilScreen() {
   const router = useRouter()
+  const { t } = useTranslation()
   const { profile, signOut } = useAuthStore()
   const { collaActiva, membershipActiva, colles } = useCollaStore()
 
+  const LANG_FLAGS: Record<string, string> = { ca: '🌊', es: '🌞', en: '🌍' }
+  const currentLangFlag = LANG_FLAGS[i18n.language] ?? '🌐'
+
   function handleSignOut() {
-    Alert.alert('Tancar sessió', 'Estàs segur/a que vols tancar sessió?', [
-      { text: 'Cancel·lar', style: 'cancel' },
-      { text: 'Tancar sessió', style: 'destructive', onPress: signOut },
+    Alert.alert(t('auth.logout'), t('auth.logout.confirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('auth.logout'), style: 'destructive', onPress: signOut },
     ])
   }
 
@@ -38,27 +45,29 @@ export default function PerfilScreen() {
 
   const sections: MenuSection[] = [
     {
-      title: 'Compte',
+      title: t('perfil.section.account'),
       items: [
-        { icon: '✏️', label: 'Editar perfil', route: '/perfil/edit' },
-        { icon: '🔒', label: 'Canviar contrasenya', route: '/perfil/password' },
-        { icon: '🔔', label: 'Notificacions', route: '/perfil/notifications' },
+        { icon: '✏️', label: t('perfil.edit'),          route: '/perfil/edit' },
+        { icon: '🚗', label: t('perfil.garage'),         route: '/perfil/garatge' },
+        { icon: '🔒', label: t('perfil.password'),       route: '/perfil/password' },
+        { icon: '🔔', label: t('perfil.notifications'),  route: '/perfil/notifications' },
+        { icon: currentLangFlag, label: t('perfil.language'), route: '/(auth)/language' },
       ],
     },
     {
-      title: 'Colla',
+      title: t('perfil.section.colla'),
       items: [
-        { icon: '🌩', label: 'Les meues colles', route: '/perfil/colles' },
-        { icon: '👋', label: 'Convidar membres', route: collaActiva ? `/colla/${collaActiva.id}/invitar` : undefined },
-        { icon: '🔒', label: 'Privacitat', route: '/perfil/privacitat' },
+        { icon: '🌩', label: t('perfil.myColles'), route: '/perfil/colles' },
+        { icon: '👋', label: t('perfil.invite'),   route: collaActiva ? `/colla/${collaActiva.id}/invitar` : undefined },
+        { icon: '🔒', label: t('perfil.privacy'),  route: '/perfil/privacitat' },
       ],
     },
     {
-      title: 'Suport',
+      title: t('perfil.section.support'),
       items: [
-        { icon: '❓', label: 'Ajuda i FAQ', onPress: () => {} },
-        { icon: '📬', label: 'Contacta amb nosaltres', onPress: () => {} },
-        { icon: '⭐', label: 'Valora LaColla', onPress: () => {} },
+        { icon: '❓', label: t('perfil.help'),    onPress: () => {} },
+        { icon: '📬', label: t('perfil.contact'), onPress: () => {} },
+        { icon: '⭐', label: t('perfil.rate'),    onPress: () => {} },
       ],
     },
   ]
@@ -106,10 +115,10 @@ export default function PerfilScreen() {
         {!(profile as any)?.is_premium && (
           <TouchableOpacity style={styles.premiumBanner} onPress={() => router.push('/perfil/premium-individual' as any)}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.premiumTitle}>⭐ Prova LaColla Premium</Text>
-              <Text style={styles.premiumSub}>Sense publicitat · Funcions exclusives · 7 dies gratis</Text>
+              <Text style={styles.premiumTitle}>{t('perfil.premium.title')}</Text>
+              <Text style={styles.premiumSub}>{t('perfil.premium.sub')}</Text>
             </View>
-            <Text style={styles.premiumArrow}>→</Text>
+            <Ionicons name="chevron-forward" size={20} color={colors.gold[500]} />
           </TouchableOpacity>
         )}
 
@@ -126,7 +135,7 @@ export default function PerfilScreen() {
                   >
                     <Text style={styles.menuIcon}>{item.icon}</Text>
                     <Text style={[styles.menuLabel, item.danger && styles.menuLabelDanger]}>{item.label}</Text>
-                    <Text style={styles.menuArrow}>›</Text>
+                    <Ionicons name="chevron-forward" size={16} color={colors.gray[300]} />
                   </TouchableOpacity>
                   {idx < section.items.length - 1 && <View style={styles.divider} />}
                 </View>
@@ -138,7 +147,7 @@ export default function PerfilScreen() {
         {/* Tancar sessió */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
-            <Text style={styles.signOutText}>Tancar sessió</Text>
+            <Text style={styles.signOutText}>{t('auth.logout')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -161,7 +170,6 @@ const styles = StyleSheet.create({
   premiumBanner:  { marginHorizontal: spacing.screenH, marginBottom: spacing[5], backgroundColor: colors.gold[100], borderRadius: radius.lg, padding: spacing[4], flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: colors.gold[500] },
   premiumTitle:   { ...typography.h3, color: colors.gray[900] },
   premiumSub:     { ...typography.bodySm, color: colors.gray[600], marginTop: 3 },
-  premiumArrow:   { ...typography.h2, color: colors.gold[500] },
   section:        { marginHorizontal: spacing.screenH, marginBottom: spacing[4] },
   sectionTitle:   { ...typography.label, color: colors.gray[400], marginBottom: spacing[2] },
   menuCard:       { backgroundColor: colors.white, borderRadius: radius.md, ...shadows.sm, overflow: 'hidden' },
@@ -169,7 +177,6 @@ const styles = StyleSheet.create({
   menuIcon:       { fontSize: 18, marginRight: spacing[3], width: 24, textAlign: 'center' },
   menuLabel:      { flex: 1, ...typography.body, color: colors.gray[800] },
   menuLabelDanger:{ color: colors.danger[500] },
-  menuArrow:      { fontSize: 20, color: colors.gray[300] },
   divider:        { height: 1, backgroundColor: colors.gray[100], marginLeft: 52 },
   signOutBtn:     { backgroundColor: colors.white, borderRadius: radius.md, paddingVertical: spacing[4], alignItems: 'center', borderWidth: 1.5, borderColor: colors.danger[100], ...shadows.sm },
   signOutText:    { ...typography.body, color: colors.danger[500], fontWeight: '600' },

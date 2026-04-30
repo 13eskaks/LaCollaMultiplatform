@@ -1,71 +1,143 @@
-import { useState } from 'react'
-import { View, Text, ScrollView, StyleSheet, Switch, Alert } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useState, useEffect } from 'react'
+import { View, Text, ScrollView, StyleSheet, Switch, Alert, TouchableOpacity } from 'react-native'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
+import { useScreenCache } from '@/stores/screenCache'
 import { colors, typography, spacing, radius } from '@/theme'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { DatePicker } from '@/components/ui/DatePicker'
+import { LocationInput } from '@/components/ui/LocationInput'
+import type { LocVal } from '@/components/ui/LocationInput'
+import { RichBodyEditor, uploadBlocks, blocksFromSaved, makeTextBlock } from '@/components/ui/RichBody'
+import type { RichBlock, SavedBlock } from '@/components/ui/RichBody'
+
+// Colors forbidden: #f59e0b (torn) and #7c3aed (acta)
+const EVENT_COLORS = [
+  '#2563eb',  // blue (default)
+  '#16a34a',  // green
+  '#dc2626',  // red
+  '#0891b2',  // cyan
+  '#be185d',  // rose
+  '#0f766e',  // teal
+  '#c2410c',  // burnt-orange
+  '#374151',  // charcoal
+]
 
 export default function CreateEventScreen() {
   const router = useRouter()
+  const { eventId } = useLocalSearchParams<{ eventId?: string }>()
+  const isEdit = !!eventId
   const { collaActiva } = useCollaStore()
+  const screenCache = useScreenCache()
 
   const [titol, setTitol] = useState('')
-  const [descripcio, setDescripcio] = useState('')
+  const [blocks, setBlocks] = useState<RichBlock[]>([makeTextBlock()])
   const [lloc, setLloc] = useState('')
-  const [dataInici, setDataInici] = useState('')
-  const [horaInici, setHoraInici] = useState('')
-  const [dataFi, setDataFi] = useState('')
-  const [horaFi, setHoraFi] = useState('')
+  const [llocLat, setLlocLat] = useState<number | null>(null)
+  const [llocLng, setLlocLng] = useState<number | null>(null)
+  const [llocId, setLlocId] = useState<string | null>(null)
+  const [dataInici, setDataInici] = useState<Date | null>(null)
+  const [horaInici, setHoraInici] = useState<Date | null>(null)
+  const [dataFi, setDataFi] = useState<Date | null>(null)
+  const [horaFi, setHoraFi] = useState<Date | null>(null)
   const [permRsvp, setPermRsvp] = useState(true)
   const [permConvidats, setPermConvidats] = useState(false)
+  const [visibleExtern, setVisibleExtern] = useState(false)
   const [limitPlaces, setLimitPlaces] = useState(false)
   const [numPlaces, setNumPlaces] = useState('')
   const [notificar, setNotificar] = useState(true)
+  const [color, setColor] = useState('#2563eb')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!eventId) return
+    supabase.from('events').select('*').eq('id', eventId).single().then(({ data }) => {
+      if (!data) return
+      setTitol(data.titol ?? '')
+      if (data.descripcio_blocks) setBlocks(blocksFromSaved(data.descripcio_blocks as SavedBlock[]))
+      else if (data.descripcio) setBlocks([makeTextBlock(data.descripcio)])
+      setLloc(data.lloc ?? '')
+      setLlocLat(data.lloc_lat ?? null)
+      setLlocLng(data.lloc_lng ?? null)
+      setLlocId(data.lloc_id ?? null)
+      if (data.data_inici) setDataInici(new Date(data.data_inici))
+      if (data.data_inici) setHoraInici(new Date(data.data_inici))
+      if (data.data_fi) setDataFi(new Date(data.data_fi))
+      if (data.data_fi) setHoraFi(new Date(data.data_fi))
+      setPermRsvp(data.permet_rsvp ?? true)
+      setPermConvidats(data.permet_convidats_externs ?? false)
+      setVisibleExtern(data.visible_extern ?? false)
+      if (data.limit_places) { setLimitPlaces(true); setNumPlaces(String(data.limit_places)) }
+      setColor(data.color ?? '#2563eb')
+    })
+  }, [eventId])
 
   function validate() {
     const e: Record<string, string> = {}
     if (!titol.trim()) e.titol = 'El títol és obligatori'
-    if (!dataInici.trim()) e.dataInici = 'La data és obligatòria'
-    if (dataInici && !/^\d{4}-\d{2}-\d{2}$/.test(dataInici)) e.dataInici = 'Format: AAAA-MM-DD'
-    if (horaInici && !/^\d{2}:\d{2}$/.test(horaInici)) e.horaInici = 'Format: HH:MM'
+    if (!dataInici) e.dataInici = 'La data és obligatòria'
     setErrors(e)
     return Object.keys(e).length === 0
   }
 
+  function buildDatetime(date: Date | null, time: Date | null, fallbackTime = '00:00'): string | null {
+    if (!date) return null
+    const d = date.toISOString().slice(0, 10)
+    const t = time
+      ? `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+      : fallbackTime
+    return `${d}T${t}:00`
+  }
+
   async function handleCreate() {
-    if (!validate() || !collaActiva) return
+    if (!validate()) return
     setLoading(true)
 
+    const payload = {
+      titol: titol.trim(),
+      descripcio: null as string | null,
+      lloc: lloc.trim() || null,
+      lloc_lat: llocLat,
+      lloc_lng: llocLng,
+      lloc_id: llocId,
+      data_inici: buildDatetime(dataInici, horaInici, '00:00'),
+      data_fi: buildDatetime(dataFi, horaFi, '23:59'),
+      permet_rsvp: permRsvp,
+      permet_convidats_externs: permConvidats,
+      visible_extern: visibleExtern,
+      limit_places: limitPlaces && numPlaces ? parseInt(numPlaces) : null,
+      color,
+    }
+
     try {
-      const datetimeInici = horaInici
-        ? `${dataInici}T${horaInici}:00`
-        : `${dataInici}T00:00:00`
-      const datetimeFi = dataFi
-        ? `${dataFi}T${horaFi || '23:59'}:00`
-        : null
-
-      const { data: event, error } = await supabase.from('events').insert({
-        colla_id: collaActiva.id,
-        titol: titol.trim(),
-        descripcio: descripcio.trim() || null,
-        lloc: lloc.trim() || null,
-        data_inici: datetimeInici,
-        data_fi: datetimeFi,
-        permet_rsvp: permRsvp,
-        permet_convidats_externs: permConvidats,
-        limit_places: limitPlaces && numPlaces ? parseInt(numPlaces) : null,
-        notificar_membres: notificar,
-      }).select().single()
-
-      if (error || !event) throw error ?? new Error('Error creant l\'event')
-
-      router.replace(`/event/${event.id}`)
+      if (isEdit) {
+        const { data: { user } } = await supabase.auth.getUser()
+        const saved = await uploadBlocks(blocks, 'event', eventId!)
+        const { error } = await supabase.from('events').update({ ...payload, descripcio_blocks: saved }).eq('id', eventId)
+        if (error) throw error
+        screenCache.invalidateAll()
+        router.back()
+      } else {
+        if (!collaActiva) return
+        const { data: event, error } = await supabase.from('events').insert({
+          ...payload,
+          colla_id: collaActiva.id,
+          notificar_membres: notificar,
+        }).select().single()
+        if (error || !event) throw error ?? new Error('Error creant l\'event')
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await supabase.from('event_rsvp').insert({ event_id: event.id, user_id: user.id, estat: 'apuntat' })
+          const saved = await uploadBlocks(blocks, 'event', event.id)
+          if (saved.length > 0) await supabase.from('events').update({ descripcio_blocks: saved }).eq('id', event.id)
+        }
+        screenCache.invalidateAll()
+        router.replace(`/event/${event.id}`)
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message)
     } finally {
@@ -77,7 +149,7 @@ export default function CreateEventScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Button label="✕" variant="ghost" size="sm" onPress={() => router.back()} style={styles.closeBtn} />
-        <Text style={styles.headerTitle}>Nou event</Text>
+        <Text style={styles.headerTitle}>{isEdit ? 'Editar event' : 'Nou event'}</Text>
         <View style={{ width: 44 }} />
       </View>
 
@@ -90,64 +162,80 @@ export default function CreateEventScreen() {
           error={errors.titol}
         />
 
-        <Input
-          label="Descripció"
-          value={descripcio}
-          onChangeText={setDescripcio}
-          placeholder="Detalls de l'event..."
-          multiline
-          style={{ height: 100 }}
-        />
+        <View style={{ gap: spacing[1] }}>
+          <Text style={{ ...typography.label, color: colors.gray[500] }}>Descripció</Text>
+          <RichBodyEditor blocks={blocks} onChange={setBlocks} placeholder="Detalls de l'event..." />
+        </View>
 
-        <Input
+        <LocationInput
           label="Lloc"
           value={lloc}
-          onChangeText={setLloc}
+          onChangeText={t => { setLloc(t); setLlocLat(null); setLlocLng(null); setLlocId(null) }}
+          onSelect={(loc: LocVal) => { setLloc(loc.nom); setLlocLat(loc.lat); setLlocLng(loc.lng); setLlocId(loc.lloc_id ?? null) }}
           placeholder="Ex: Casal faller, Plaça Major..."
+          collaId={collaActiva?.id}
         />
+
+        <View style={{ gap: spacing[2] }}>
+          <Text style={{ ...typography.label, color: colors.gray[500] }}>Color</Text>
+          <View style={{ flexDirection: 'row', gap: spacing[3], flexWrap: 'wrap' }}>
+            {EVENT_COLORS.map(c => (
+              <TouchableOpacity
+                key={c}
+                onPress={() => setColor(c)}
+                style={{
+                  width: 32, height: 32, borderRadius: 16,
+                  backgroundColor: c,
+                  justifyContent: 'center', alignItems: 'center',
+                  borderWidth: color === c ? 3 : 0,
+                  borderColor: colors.white,
+                  elevation: 3,
+                  shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.25, shadowRadius: 2,
+                }}
+              >
+                {color === c && <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>✓</Text>}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
         <View style={styles.row}>
           <View style={{ flex: 1 }}>
-            <Input
+            <DatePicker
               label="Data inici *"
               value={dataInici}
-              onChangeText={setDataInici}
-              placeholder="2026-06-15"
+              onChange={setDataInici}
               error={errors.dataInici}
-              keyboardType="numeric"
             />
           </View>
           <View style={{ width: spacing[3] }} />
           <View style={{ flex: 1 }}>
-            <Input
+            <DatePicker
               label="Hora inici"
               value={horaInici}
-              onChangeText={setHoraInici}
-              placeholder="20:00"
-              error={errors.horaInici}
-              keyboardType="numeric"
+              onChange={setHoraInici}
+              mode="time"
             />
           </View>
         </View>
 
         <View style={styles.row}>
           <View style={{ flex: 1 }}>
-            <Input
+            <DatePicker
               label="Data fi (opcional)"
               value={dataFi}
-              onChangeText={setDataFi}
-              placeholder="2026-06-15"
-              keyboardType="numeric"
+              onChange={setDataFi}
+              minimumDate={dataInici ?? undefined}
             />
           </View>
           <View style={{ width: spacing[3] }} />
           <View style={{ flex: 1 }}>
-            <Input
+            <DatePicker
               label="Hora fi"
               value={horaFi}
-              onChangeText={setHoraFi}
-              placeholder="23:00"
-              keyboardType="numeric"
+              onChange={setHoraFi}
+              mode="time"
             />
           </View>
         </View>
@@ -157,8 +245,9 @@ export default function CreateEventScreen() {
         {[
           { label: 'Permet confirmació d\'assistència (RSVP)', value: permRsvp, onChange: setPermRsvp },
           { label: 'Permet invitats externs', value: permConvidats, onChange: setPermConvidats },
+          { label: '✨ Visible a la landing pública', value: visibleExtern, onChange: setVisibleExtern },
           { label: 'Limitar nombre de places', value: limitPlaces, onChange: setLimitPlaces },
-          { label: 'Notificar als membres', value: notificar, onChange: setNotificar },
+          ...(!isEdit ? [{ label: 'Notificar als membres', value: notificar, onChange: setNotificar }] : []),
         ].map(({ label, value, onChange }) => (
           <View key={label} style={styles.toggle}>
             <Text style={styles.toggleLabel}>{label}</Text>
@@ -177,7 +266,7 @@ export default function CreateEventScreen() {
         )}
 
         <Button
-          label="Crear event 🎉"
+          label={isEdit ? 'Guardar canvis ✏️' : 'Crear event 🎉'}
           size="lg"
           loading={loading}
           onPress={handleCreate}
