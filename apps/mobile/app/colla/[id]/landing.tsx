@@ -28,9 +28,11 @@ export default function CollaLandingScreen() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
-    const today = new Date().toISOString()
+    const today    = new Date().toISOString()
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const yearEnd   = `${new Date().getFullYear()}-12-31`
 
-    const [collaRes, countRes, eventsRes] = await Promise.all([
+    const [collaRes, countRes, eventsRes, evYearRes, evTotalRes] = await Promise.all([
       supabase.from('colles')
         .select('id, nom, localitat, comarca, any_fundacio, avatar_url, portada_url, descripcio, landing_blocks')
         .eq('id', id).single(),
@@ -42,9 +44,13 @@ export default function CollaLandingScreen() {
         .gte('data_inici', today)
         .order('data_inici')
         .limit(5),
+      supabase.from('events').select('id', { count: 'exact', head: true })
+        .eq('colla_id', id).gte('data_inici', yearStart).lte('data_inici', yearEnd),
+      supabase.from('events').select('id', { count: 'exact', head: true })
+        .eq('colla_id', id).lt('data_inici', today),
     ])
 
-    setColla(collaRes.data)
+    setColla({ ...collaRes.data, eventsYear: evYearRes.count ?? 0, eventsTotal: evTotalRes.count ?? 0 })
     setMembresCount(countRes.data ?? 0)
     setOpenEvents(eventsRes.data ?? [])
 
@@ -89,6 +95,8 @@ export default function CollaLandingScreen() {
     localitat: colla.localitat,
     any_fundacio: colla.any_fundacio,
     membresCount,
+    eventsYear:  colla.eventsYear,
+    eventsTotal: colla.eventsTotal,
   }
 
   return (

@@ -9,8 +9,8 @@ import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
-import { uploadBlocks, blocksFromSaved, RichBodyView } from '@/components/ui/RichBody'
-import type { RichBlock, SavedBlock, CollaData } from '@/components/ui/RichBody'
+import { uploadBlocks, blocksFromSaved, RichBodyView, KPI_DEFS } from '@/components/ui/RichBody'
+import type { RichBlock, SavedBlock, CollaData, KpiType } from '@/components/ui/RichBody'
 
 let _seq = Date.now()
 function uid() { return String(_seq++) }
@@ -22,6 +22,7 @@ function makeBlock(type: RichBlock['type']): RichBlock {
   if (type === 'stats')     return { type: 'stats',     id: uid() }
   if (type === 'stat_item') return { type: 'stat_item', id: uid(), num: '', label: '', icon: '' }
   if (type === 'callout')   return { type: 'callout',   id: uid(), content: '', icon: '💡', color: '#f59e0b' }
+  if (type === 'kpi')       return { type: 'kpi',       id: uid(), kpiType: 'members' as KpiType }
   return { type: 'image', id: uid() }
 }
 
@@ -37,6 +38,7 @@ function blocksToSaved(blocks: RichBlock[]): SavedBlock[] {
     }
     if (b.type === 'stat_item') return [{ type: 'stat_item', num: b.num, label: b.label, icon: b.icon } as SavedBlock]
     if (b.type === 'callout' && b.content.trim()) return [{ type: 'callout', content: b.content.trim(), icon: b.icon, color: b.color } as SavedBlock]
+    if (b.type === 'kpi') return [{ type: 'kpi', kpiType: b.kpiType } as SavedBlock]
     return []
   })
 }
@@ -61,17 +63,25 @@ export default function LandingEditorScreen() {
   const [portadaUrl, setPortadaUrl] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  const [showKpiPicker, setShowKpiPicker] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { loadBlocks() }, [collaId])
 
   async function loadBlocks() {
-    const [collaRes, countRes] = await Promise.all([
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const yearEnd   = `${new Date().getFullYear()}-12-31`
+
+    const [collaRes, countRes, evYearRes, evTotalRes] = await Promise.all([
       supabase.from('colles')
         .select('landing_blocks, nom, localitat, any_fundacio, portada_url, avatar_url')
         .eq('id', collaId).single(),
       supabase.rpc('get_colla_membres_count', { p_colla_id: collaId }),
+      supabase.from('events').select('id', { count: 'exact', head: true })
+        .eq('colla_id', collaId).gte('data_inici', yearStart).lte('data_inici', yearEnd),
+      supabase.from('events').select('id', { count: 'exact', head: true })
+        .eq('colla_id', collaId).lt('data_inici', new Date().toISOString()),
     ])
 
     if (collaRes.data?.landing_blocks && Array.isArray(collaRes.data.landing_blocks) && collaRes.data.landing_blocks.length > 0) {
@@ -84,6 +94,8 @@ export default function LandingEditorScreen() {
         localitat: collaRes.data.localitat,
         any_fundacio: collaRes.data.any_fundacio,
         membresCount: countRes.data ?? 0,
+        eventsYear:  evYearRes.count  ?? 0,
+        eventsTotal: evTotalRes.count ?? 0,
       })
       setPortadaUrl(collaRes.data.portada_url ?? null)
       setAvatarUrl(collaRes.data.avatar_url ?? null)
@@ -115,6 +127,11 @@ export default function LandingEditorScreen() {
       ;[next[idx], next[target]] = [next[target], next[idx]]
       return next
     })
+  }
+
+  function addKpi(kpiType: KpiType) {
+    setBlocks(prev => [...prev, { type: 'kpi', id: uid(), kpiType }])
+    setShowKpiPicker(false)
   }
 
   async function addBlock(type: RichBlock['type']) {
@@ -258,6 +275,23 @@ export default function LandingEditorScreen() {
 
             {/* Toolbar */}
             <View style={s.toolbar}>
+              {/* KPI picker panel */}
+              {showKpiPicker && (
+                <View style={s.kpiPanel}>
+                  <Text style={s.kpiPanelTitle}>⚡ KPIs en temps real · s'actualitzen automàticament</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.kpiPanelRow}>
+                    {(Object.entries(KPI_DEFS) as [KpiType, typeof KPI_DEFS[KpiType]][]).map(([kpiType, def]) => (
+                      <TouchableOpacity key={kpiType} style={s.kpiCard} onPress={() => addKpi(kpiType)} activeOpacity={0.8}>
+                        <Text style={s.kpiCardIcon}>{def.icon}</Text>
+                        <Text style={s.kpiCardLabel}>{def.label}</Text>
+                        <View style={s.kpiLiveBadge}>
+                          <Text style={s.kpiLiveBadgeText}>LIVE</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.toolbarInner}>
                 {TOOLBAR_ITEMS.map(item => (
                   <TouchableOpacity key={item.type} style={s.toolItem} onPress={() => addBlock(item.type)}>
@@ -265,6 +299,14 @@ export default function LandingEditorScreen() {
                     <Text style={s.toolLabel}>{item.label}</Text>
                   </TouchableOpacity>
                 ))}
+                <View style={s.toolSep} />
+                <TouchableOpacity
+                  style={[s.toolItem, showKpiPicker && s.toolItemActive]}
+                  onPress={() => setShowKpiPicker(v => !v)}
+                >
+                  <Text style={s.toolIcon}>⚡</Text>
+                  <Text style={[s.toolLabel, showKpiPicker && s.toolLabelActive]}>KPI</Text>
+                </TouchableOpacity>
               </ScrollView>
             </View>
           </>
@@ -392,6 +434,19 @@ function BlockRow({
           </View>
         )}
 
+        {block.type === 'kpi' && (
+          <View style={s.kpiBlock}>
+            <Text style={s.kpiBlockIcon}>{KPI_DEFS[block.kpiType]?.icon}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.kpiBlockLabel}>{KPI_DEFS[block.kpiType]?.label}</Text>
+              <Text style={s.kpiBlockSub}>Es mostra el valor real de la colla</Text>
+            </View>
+            <View style={s.kpiLiveBadge}>
+              <Text style={s.kpiLiveBadgeText}>LIVE</Text>
+            </View>
+          </View>
+        )}
+
         {block.type === 'callout' && (
           <View style={[s.calloutBlock, { borderColor: (block.color ?? '#f59e0b') + '88', backgroundColor: (block.color ?? '#f59e0b') + '12' }]}>
             <View style={s.calloutTop}>
@@ -508,9 +563,30 @@ const s = StyleSheet.create({
   calloutInput:   { borderWidth: 1, borderColor: colors.gray[200], borderRadius: radius.sm, paddingHorizontal: spacing[2], paddingVertical: spacing[2], ...typography.body, color: colors.gray[900], backgroundColor: colors.white, minHeight: 60, textAlignVertical: 'top' },
 
   // Toolbar
-  toolbar:      { borderTopWidth: 1, borderTopColor: colors.gray[100], backgroundColor: colors.white, paddingVertical: spacing[2] },
-  toolbarInner: { paddingHorizontal: spacing.screenH, gap: spacing[2] },
-  toolItem:     { alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing[3], paddingVertical: spacing[2], backgroundColor: colors.gray[50], borderRadius: radius.sm, borderWidth: 1, borderColor: colors.gray[200], minWidth: 60 },
-  toolIcon:     { fontSize: 18, fontWeight: '800', color: colors.gray[700] },
-  toolLabel:    { ...typography.caption, color: colors.gray[500], marginTop: 2 },
+  toolbar:         { borderTopWidth: 1, borderTopColor: colors.gray[100], backgroundColor: colors.white, paddingVertical: spacing[2] },
+  toolbarInner:    { paddingHorizontal: spacing.screenH, gap: spacing[2] },
+  toolItem:        { alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing[3], paddingVertical: spacing[2], backgroundColor: colors.gray[50], borderRadius: radius.sm, borderWidth: 1, borderColor: colors.gray[200], minWidth: 60 },
+  toolItemActive:  { backgroundColor: colors.primary[50], borderColor: colors.primary[400] },
+  toolIcon:        { fontSize: 18, fontWeight: '800', color: colors.gray[700] },
+  toolLabel:       { ...typography.caption, color: colors.gray[500], marginTop: 2 },
+  toolLabelActive: { color: colors.primary[600] },
+  toolSep:         { width: 1, backgroundColor: colors.gray[200], marginVertical: spacing[1], alignSelf: 'stretch' },
+
+  // KPI picker panel
+  kpiPanel:       { borderBottomWidth: 1, borderBottomColor: colors.gray[100], paddingVertical: spacing[2], backgroundColor: colors.primary[50] },
+  kpiPanelTitle:  { ...typography.caption, color: colors.primary[600], fontWeight: '600', paddingHorizontal: spacing.screenH, marginBottom: spacing[2] },
+  kpiPanelRow:    { paddingHorizontal: spacing.screenH, gap: spacing[2] },
+  kpiCard:        { alignItems: 'center', gap: spacing[1], backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[3], borderWidth: 1.5, borderColor: colors.primary[200], minWidth: 96, ...shadows.sm },
+  kpiCardIcon:    { fontSize: 26 },
+  kpiCardLabel:   { ...typography.caption, color: colors.gray[700], fontWeight: '600', textAlign: 'center' },
+
+  // KPI block (editor row)
+  kpiBlock:      { flexDirection: 'row', alignItems: 'center', gap: spacing[3], backgroundColor: colors.primary[50], borderRadius: radius.md, padding: spacing[3], borderWidth: 1.5, borderColor: colors.primary[200] },
+  kpiBlockIcon:  { fontSize: 28 },
+  kpiBlockLabel: { ...typography.body, color: colors.primary[800], fontWeight: '700' },
+  kpiBlockSub:   { ...typography.caption, color: colors.primary[400], marginTop: 2 },
+
+  // Live badge (shared)
+  kpiLiveBadge:     { backgroundColor: colors.primary[600], borderRadius: radius.sm, paddingHorizontal: spacing[2], paddingVertical: 2 },
+  kpiLiveBadgeText: { fontSize: 9, fontWeight: '800', color: colors.white, letterSpacing: 0.5 },
 })

@@ -5,6 +5,8 @@ import { colors, typography, spacing, radius } from '@/theme'
 
 // ── types ──────────────────────────────────────────────────────────────────
 
+export type KpiType = 'members' | 'years' | 'events_year' | 'events_total'
+
 export type RichBlock =
   | { type: 'text';      id: string; content: string }
   | { type: 'image';     id: string; uri?: string; url?: string }
@@ -13,6 +15,7 @@ export type RichBlock =
   | { type: 'stats';     id: string }
   | { type: 'stat_item'; id: string; num: string; label: string; icon?: string }
   | { type: 'callout';   id: string; content: string; icon?: string; color?: string }
+  | { type: 'kpi';       id: string; kpiType: KpiType }
 
 export type SavedBlock =
   | { type: 'text';      content: string }
@@ -22,9 +25,18 @@ export type SavedBlock =
   | { type: 'stats' }
   | { type: 'stat_item'; num: string; label: string; icon?: string }
   | { type: 'callout';   content: string; icon?: string; color?: string }
+  | { type: 'kpi';       kpiType: KpiType }
 
 export type CollaData = {
   nom?: string; localitat?: string; any_fundacio?: number; membresCount?: number
+  eventsYear?: number; eventsTotal?: number
+}
+
+export const KPI_DEFS: Record<KpiType, { icon: string; label: string; getValue: (c: CollaData) => string }> = {
+  members:      { icon: '👥', label: 'Membres actius',     getValue: c => c.membresCount != null ? String(c.membresCount) : '—' },
+  years:        { icon: '🏛️', label: 'Anys de vida',       getValue: c => c.any_fundacio ? String(new Date().getFullYear() - c.any_fundacio) : '—' },
+  events_year:  { icon: '📅', label: 'Activitats enguany', getValue: c => c.eventsYear != null ? String(c.eventsYear) : '—' },
+  events_total: { icon: '🏆', label: 'Actuacions totals',  getValue: c => c.eventsTotal != null ? String(c.eventsTotal) : '—' },
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -100,6 +112,8 @@ export async function uploadBlocks(
       out.push({ type: 'stat_item', num: b.num, label: b.label, ...(b.icon ? { icon: b.icon } : {}) })
     } else if (b.type === 'callout') {
       if (b.content.trim()) out.push({ type: 'callout', content: b.content.trim(), ...(b.icon ? { icon: b.icon } : {}), ...(b.color ? { color: b.color } : {}) })
+    } else if (b.type === 'kpi') {
+      out.push({ type: 'kpi', kpiType: b.kpiType })
     }
   }
   return out
@@ -180,14 +194,14 @@ export function RichBodyEditor({
               placeholderTextColor={colors.gray[400]}
               textAlignVertical="top"
             />
-          ) : (
+          ) : block.type === 'image' ? (
             <View style={ed.imgWrap}>
               <Image source={{ uri: block.uri ?? block.url }} style={ed.previewImg} resizeMode="cover" />
               <TouchableOpacity style={ed.removeBtn} onPress={() => removeBlock(block.id)}>
                 <Text style={ed.removeTxt}>✕</Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
           <TouchableOpacity style={ed.addBtn} onPress={() => addImageAfter(i)}>
             <Text style={ed.addBtnTxt}>📷 Inserir imatge</Text>
           </TouchableOpacity>
@@ -275,6 +289,17 @@ export function RichBodyView({
             <View key={i} style={[vw.callout, { backgroundColor: color + '15', borderLeftColor: color }]}>
               {b.icon ? <Text style={vw.calloutIconEl}>{b.icon}</Text> : null}
               <Text style={vw.calloutTextEl}>{b.content}</Text>
+            </View>
+          )
+        }
+        if (b.type === 'kpi') {
+          const def = KPI_DEFS[b.kpiType]
+          if (!def || !colla) return null
+          return (
+            <View key={i} style={vw.statItemCard}>
+              <Text style={vw.statItemIconEl}>{def.icon}</Text>
+              <Text style={vw.statItemNumEl}>{def.getValue(colla)}</Text>
+              <Text style={vw.statItemLblEl}>{def.label}</Text>
             </View>
           )
         }
