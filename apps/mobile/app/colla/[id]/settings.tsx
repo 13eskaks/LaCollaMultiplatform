@@ -6,9 +6,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
+import * as FileSystem from 'expo-file-system'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
+import { useDataCache } from '@/stores/dataCache'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { ScreenHeader } from '@/components/ui/ScreenHeader'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +18,7 @@ import { Input } from '@/components/ui/Input'
 import { Avatar } from '@/components/ui/Avatar'
 import { CityInput } from '@/components/ui/CityInput'
 import { YearPicker } from '@/components/ui/YearPicker'
+import { LocationPickerModal } from '@/components/ui/LocationPickerModal'
 
 const ALL_MODULS = [
   { key: 'anuncis',    icon: '📢', label: 'Anuncis' },
@@ -28,8 +31,8 @@ const ALL_MODULS = [
   { key: 'quotes',     icon: '📋', label: 'Quotes' },
   { key: 'fotos',      icon: '📸', label: 'Fotos' },
   { key: 'actes',      icon: '🏛', label: 'Actes' },
-  { key: 'pressupost', icon: '🏷️', label: 'Pressupost' },
-  { key: 'connexions', icon: '🔗', label: 'Connexions' },
+  { key: 'pressupost',  icon: '🏷️', label: 'Pressupost' },
+  { key: 'connexions',  icon: '🔗', label: 'Connexions' },
 ]
 
 type Tab = 'general' | 'membres' | 'moduls'
@@ -46,6 +49,7 @@ export default function CollaSettingsScreen() {
   const router = useRouter()
   const { t } = useTranslation()
   const { loadColles } = useCollaStore()
+  const dc = useDataCache()
 
   const [tab, setTab] = useState<Tab>('general')
   const [loading, setLoading] = useState(true)
@@ -55,8 +59,11 @@ export default function CollaSettingsScreen() {
   const [nom, setNom] = useState('')
   const [localitat, setLocalitat] = useState('')
   const [comarca, setComarca] = useState('')
+  const [latitud, setLatitud] = useState<number | null>(null)
+  const [longitud, setLongitud] = useState<number | null>(null)
   const [anyFundacio, setAnyFundacio] = useState('')
   const [nomLastChanged, setNomLastChanged] = useState<string | null>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
   const [originalNom, setOriginalNom] = useState('')
   const [portadaUrl, setPortadaUrl] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
@@ -82,7 +89,7 @@ export default function CollaSettingsScreen() {
     const [configRes, collaRes, pendentsRes] = await Promise.all([
       supabase.from('colla_config').select('*').eq('colla_id', collaId).single(),
       supabase.from('colles')
-        .select('nom, localitat, comarca, any_fundacio, descripcio, portada_url, avatar_url, nom_last_changed')
+        .select('nom, localitat, comarca, latitud, longitud, any_fundacio, descripcio, portada_url, avatar_url, nom_last_changed')
         .eq('id', collaId).single(),
       supabase.from('colla_membres')
         .select('id, user_id, created_at, profiles!user_id(nom, avatar_url)')
@@ -104,6 +111,7 @@ export default function CollaSettingsScreen() {
       const c = collaRes.data
       setNom(c.nom ?? ''); setOriginalNom(c.nom ?? '')
       setLocalitat(c.localitat ?? ''); setComarca(c.comarca ?? '')
+      setLatitud(c.latitud ?? null); setLongitud(c.longitud ?? null)
       setAnyFundacio(c.any_fundacio ? String(c.any_fundacio) : '')
       setPortadaUrl(c.portada_url); setAvatarUrl(c.avatar_url)
       setNomLastChanged(c.nom_last_changed ?? null)
@@ -124,18 +132,9 @@ export default function CollaSettingsScreen() {
     const path = `${collaId}/${type}-${Date.now()}.${ext}`
     setUploadingImage(type)
     try {
-      const response = await fetch(asset.uri)
-      const blob = await response.blob()
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-        reader.readAsDataURL(blob)
-      })
-      const base64 = dataUrl.split(',')[1]
-      const binaryStr = atob(base64)
-      const bytes = new Uint8Array(binaryStr.length)
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+      const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
+      const bstr = atob(b64); const bytes = new Uint8Array(bstr.length)
+      for (let i = 0; i < bstr.length; i++) bytes[i] = bstr.charCodeAt(i)
 
       const { error } = await supabase.storage
         .from('colla-fotos')
@@ -148,7 +147,7 @@ export default function CollaSettingsScreen() {
       else setAvatarUrl(publicUrl)
       loadColles()
     } catch {
-      Alert.alert('Error', 'No s\'ha pogut pujar la imatge')
+      Alert.alert(t('common.error'), t('settings.image.uploadError'))
     } finally {
       setUploadingImage(null)
     }
@@ -162,16 +161,18 @@ export default function CollaSettingsScreen() {
     : null
 
   async function handleSaveGeneral() {
-    if (!nom.trim()) { Alert.alert('Error', 'El nom no pot estar buit'); return }
+    if (!nom.trim()) { Alert.alert(t('common.error'), t('settings.error.nameEmpty')); return }
     const nomChanged = nom.trim() !== originalNom
     if (nomChanged && !canRename) {
-      Alert.alert('Límit de canvi de nom', `Pots tornar a canviar el nom a partir del ${nextRenameDate!.toLocaleDateString('ca-ES')}.`)
+      Alert.alert(t('settings.rename.limit'), t('settings.rename.until', { date: nextRenameDate!.toLocaleDateString() }))
       return
     }
     setSaving(true)
     const collaUpdate: Record<string, any> = {
       localitat: localitat.trim() || null,
       comarca: comarca.trim() || null,
+      latitud: latitud ?? null,
+      longitud: longitud ?? null,
       any_fundacio: anyFundacio ? parseInt(anyFundacio, 10) : null,
     }
     if (nomChanged) { collaUpdate.nom = nom.trim(); collaUpdate.nom_last_changed = new Date().toISOString() }
@@ -181,7 +182,7 @@ export default function CollaSettingsScreen() {
     else {
       if (nomChanged) { setOriginalNom(nom.trim()); setNomLastChanged(new Date().toISOString()) }
       loadColles()
-      Alert.alert('Canvis guardats ✓')
+      Alert.alert(t('settings.saved'))
     }
     setSaving(false)
   }
@@ -207,11 +208,11 @@ export default function CollaSettingsScreen() {
   }
   function toggleModul(key: string, actiu: boolean) {
     const next = actiu ? modulsActius.filter(k => k !== key) : [...modulsActius, key]
-    // If deactivating, also remove from comissio-only list
     const nextComissio = actiu ? modulsComissio.filter(k => k !== key) : modulsComissio
     setModulsActius(next)
     if (actiu) setModulsComissio(nextComissio)
     saveConfigField({ moduls_actius: next, moduls_comissio: nextComissio })
+    dc.bust(`colla_tab_${collaId}`)
   }
 
   function toggleModulVisibilitat(key: string) {
@@ -221,6 +222,7 @@ export default function CollaSettingsScreen() {
       : [...modulsComissio, key]
     setModulsComissio(next)
     saveConfigField({ moduls_comissio: next })
+    dc.bust(`colla_tab_${collaId}`)
   }
 
   // ── Pending members ───────────────────────────────────────────
@@ -234,9 +236,9 @@ export default function CollaSettingsScreen() {
   }
 
   async function handleRebutjar(membreId: string, nom: string) {
-    Alert.alert('Rebutjar sol·licitud', `Rebutges la sol·licitud de ${nom}?`, [
-      { text: 'Cancel·lar', style: 'cancel' },
-      { text: 'Rebutjar', style: 'destructive', onPress: async () => {
+    Alert.alert(t('settings.members.reject.title'), t('settings.members.reject.confirm', { nom }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: async () => {
         setActionLoading(membreId)
         await supabase.from('colla_membres').delete().eq('id', membreId)
         setPendents(prev => prev.filter(p => p.id !== membreId))
@@ -267,7 +269,7 @@ export default function CollaSettingsScreen() {
   if (loading) {
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
-        <ScreenHeader title="Configuració de la colla" />
+        <ScreenHeader title={t('settings.title.loading')} />
         <View style={styles.loaderWrap}><ActivityIndicator color={colors.primary[600]} /></View>
       </SafeAreaView>
     )
@@ -275,7 +277,7 @@ export default function CollaSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScreenHeader title="Configuració" />
+      <ScreenHeader title={t('settings.title')} />
 
       {/* Tab bar */}
       <View style={styles.tabBar}>
@@ -307,12 +309,12 @@ export default function CollaSettingsScreen() {
                   : <View style={[styles.portadaImg, styles.portadaPlaceholder]} />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.imageLabelText}>Imatge de portada</Text>
-                <Text style={styles.imageHint}>Fons del perfil de la colla</Text>
+                <Text style={styles.imageLabelText}>{t('settings.image.portada')}</Text>
+                <Text style={styles.imageHint}>{t('settings.image.portada.hint')}</Text>
               </View>
               {uploadingImage === 'portada'
                 ? <ActivityIndicator size="small" color={colors.primary[600]} />
-                : <Text style={styles.editLink}>✏️ Canviar</Text>}
+                : <Text style={styles.editLink}>{t('settings.image.change')}</Text>}
             </TouchableOpacity>
             <View style={styles.divider} />
             <TouchableOpacity style={styles.imageRow} onPress={() => handleUploadImage('avatar')} disabled={!!uploadingImage}>
@@ -322,12 +324,12 @@ export default function CollaSettingsScreen() {
                   : <View style={[styles.avatarImg, styles.avatarPlaceholder]} />}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.imageLabelText}>Imatge de perfil</Text>
-                <Text style={styles.imageHint}>Logo o avatar de la colla</Text>
+                <Text style={styles.imageLabelText}>{t('settings.image.avatar')}</Text>
+                <Text style={styles.imageHint}>{t('settings.image.avatar.hint')}</Text>
               </View>
               {uploadingImage === 'avatar'
                 ? <ActivityIndicator size="small" color={colors.primary[600]} />
-                : <Text style={styles.editLink}>✏️ Canviar</Text>}
+                : <Text style={styles.editLink}>{t('settings.image.change')}</Text>}
             </TouchableOpacity>
           </View>
 
@@ -335,23 +337,55 @@ export default function CollaSettingsScreen() {
           <Text style={styles.sectionTitle}>{t('settings.section.basicInfo')}</Text>
           <View style={styles.card}>
             <View style={styles.fieldWrap}>
-              <Input label="Nom de la colla" value={nom} onChangeText={setNom} editable={canRename} />
+              <Input label={t('settings.basicInfo.nom')} value={nom} onChangeText={setNom} editable={canRename} />
               {!canRename && nextRenameDate && (
                 <Text style={styles.renameHint}>
-                  🔒 Pots canviar el nom a partir del {nextRenameDate.toLocaleDateString('ca-ES')}
+                  {t('settings.basicInfo.renameLock', { date: nextRenameDate.toLocaleDateString() })}
                 </Text>
               )}
             </View>
             <View style={styles.fieldWrap}>
-              <CityInput label="Localitat" value={localitat} onChangeText={setLocalitat} placeholder="Ex: Gràcia, Barcelona..." />
+              <CityInput label={t('settings.basicInfo.localitat')} value={localitat} onChangeText={setLocalitat} placeholder="Ex: Gràcia, Barcelona..." />
             </View>
-            <View style={styles.fieldWrap}>
-              <Input label="Comarca" value={comarca} onChangeText={setComarca} placeholder="Ex: Barcelonès" />
-            </View>
+            {comarca ? (
+              <View style={styles.fieldWrap}>
+                <Text style={styles.fieldLabel}>{t('settings.basicInfo.comarca')}</Text>
+                <Text style={styles.fieldReadOnly}>{comarca}</Text>
+              </View>
+            ) : null}
             <View style={[styles.fieldWrap, { paddingBottom: spacing[3] }]}>
-              <YearPicker label="Any de fundació" value={anyFundacio} onChange={setAnyFundacio} />
+              <YearPicker label={t('settings.basicInfo.anyFundacio')} value={anyFundacio} onChange={setAnyFundacio} />
             </View>
           </View>
+
+          <LocationPickerModal
+            visible={showLocationPicker}
+            initialLat={latitud}
+            initialLon={longitud}
+            onClose={() => setShowLocationPicker(false)}
+            onConfirm={(lat, lon, loc, com) => {
+              setLatitud(lat); setLongitud(lon)
+              if (loc) setLocalitat(loc)
+              if (com) setComarca(com)
+              setShowLocationPicker(false)
+            }}
+          />
+
+          {/* Location picker */}
+          <Text style={styles.sectionTitle}>{t('settings.section.location')}</Text>
+          <TouchableOpacity style={styles.locationBtn} onPress={() => setShowLocationPicker(true)}>
+            <Text style={styles.locationBtnIcon}>📍</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationBtnTitle}>
+                {latitud && longitud ? t('settings.location.change') : t('settings.location.select')}
+              </Text>
+              {latitud && longitud
+                ? <Text style={styles.locationBtnSub}>{latitud.toFixed(4)}, {longitud.toFixed(4)}</Text>
+                : <Text style={styles.locationBtnSub}>{t('settings.location.notSet')}</Text>
+              }
+            </View>
+            <Text style={styles.landingBtnChevron}>›</Text>
+          </TouchableOpacity>
 
           {/* Landing editor */}
           <Text style={styles.sectionTitle}>{t('settings.section.publicPage')}</Text>
@@ -362,8 +396,8 @@ export default function CollaSettingsScreen() {
             <View style={styles.landingBtnLeft}>
               <Text style={styles.landingBtnIcon}>✨</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.landingBtnTitle}>Editar contingut de la landing</Text>
-                <Text style={styles.landingBtnHint}>Text, imatges, stats i molt més</Text>
+                <Text style={styles.landingBtnTitle}>{t('settings.landing.title')}</Text>
+                <Text style={styles.landingBtnHint}>{t('settings.landing.hint')}</Text>
               </View>
             </View>
             <Text style={styles.landingBtnChevron}>›</Text>
@@ -383,7 +417,7 @@ export default function CollaSettingsScreen() {
           {pendents.length === 0 ? (
             <View style={styles.emptyPendents}>
               <Text style={styles.emptyPendentsIcon}>✅</Text>
-              <Text style={styles.emptyPendentsText}>Cap sol·licitud pendent</Text>
+              <Text style={styles.emptyPendentsText}>{t('settings.members.noPending')}</Text>
             </View>
           ) : (
             <View style={styles.card}>
@@ -397,7 +431,13 @@ export default function CollaSettingsScreen() {
                       <Avatar name={nomP} uri={p.profiles?.avatar_url} size="sm" />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.pendentNom}>{nomP}</Text>
-                        <Text style={styles.pendentDies}>fa {dies === 0 ? 'menys d\'1 dia' : `${dies} dia${dies > 1 ? 's' : ''}`}</Text>
+                        <Text style={styles.pendentDies}>
+                          {dies === 0
+                            ? t('settings.members.ago.less')
+                            : dies === 1
+                              ? t('settings.members.ago.day')
+                              : t('settings.members.ago.days', { count: dies })}
+                        </Text>
                       </View>
                       {actionLoading === p.id ? (
                         <ActivityIndicator size="small" color={colors.primary[600]} />
@@ -407,7 +447,7 @@ export default function CollaSettingsScreen() {
                             <Text style={styles.rebutjarText}>✕</Text>
                           </TouchableOpacity>
                           <TouchableOpacity style={styles.aprovarBtn} onPress={() => handleAprovar(p.id)}>
-                            <Text style={styles.aprovarText}>✓ Aprovar</Text>
+                            <Text style={styles.aprovarText}>{t('settings.members.approve')}</Text>
                           </TouchableOpacity>
                         </View>
                       )}
@@ -422,8 +462,8 @@ export default function CollaSettingsScreen() {
           <TouchableOpacity style={styles.inviteCard} onPress={() => router.push(`/colla/${collaId}/invitar` as any)}>
             <Text style={styles.inviteIcon}>👋</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inviteTitle}>Convidar nous membres</Text>
-              <Text style={styles.inviteHint}>Comparteix l'enllaç d'invitació de la colla</Text>
+              <Text style={styles.inviteTitle}>{t('settings.members.invite.title')}</Text>
+              <Text style={styles.inviteHint}>{t('settings.members.invite.hint')}</Text>
             </View>
             <Text style={styles.inviteChevron}>›</Text>
           </TouchableOpacity>
@@ -433,16 +473,16 @@ export default function CollaSettingsScreen() {
           <View style={styles.card}>
             <View style={styles.toggle}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Aprovació manual de nous membres</Text>
-                <Text style={styles.toggleHint}>Si desactivat, s'aproven automàticament</Text>
+                <Text style={styles.toggleLabel}>{t('settings.access.manualApproval')}</Text>
+                <Text style={styles.toggleHint}>{t('settings.access.manualApproval.hint')}</Text>
               </View>
               <Switch value={aprovacioManual} onValueChange={toggleAprovacio} trackColor={{ true: colors.primary[600] }} />
             </View>
             <View style={styles.divider} />
             <View style={styles.toggle}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Perfil de colla públic</Text>
-                <Text style={styles.toggleHint}>Visible a qui busca colles per unir-se</Text>
+                <Text style={styles.toggleLabel}>{t('settings.access.publicProfile')}</Text>
+                <Text style={styles.toggleHint}>{t('settings.access.publicProfile.hint')}</Text>
               </View>
               <Switch value={perfilPublic} onValueChange={togglePerfilPublic} trackColor={{ true: colors.primary[600] }} />
             </View>
@@ -452,17 +492,17 @@ export default function CollaSettingsScreen() {
           <Text style={styles.sectionTitle}>{t('settings.section.permissions')}</Text>
           <View style={styles.card}>
             <View style={styles.permRow}>
-              <Text style={styles.permLabel}>Qui pot crear events</Text>
+              <Text style={styles.permLabel}>{t('settings.permissions.createEvents')}</Text>
               <SegmentControl value={quiCreaEvents} field="events" />
             </View>
             <View style={styles.divider} />
             <View style={styles.permRow}>
-              <Text style={styles.permLabel}>Qui pot crear votacions</Text>
+              <Text style={styles.permLabel}>{t('settings.permissions.createVotes')}</Text>
               <SegmentControl value={quiCreaVotacions} field="votacions" />
             </View>
             <View style={styles.divider} />
             <View style={styles.permRow}>
-              <Text style={styles.permLabel}>Qui pot crear fils al fòrum</Text>
+              <Text style={styles.permLabel}>{t('settings.permissions.createThreads')}</Text>
               <SegmentControl value={quiCreaFils} field="fils" />
             </View>
           </View>
@@ -475,9 +515,7 @@ export default function CollaSettingsScreen() {
       {tab === 'moduls' && (
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.sectionTitle}>{t('settings.section.modules')}</Text>
-          <Text style={styles.modulsHint}>
-            Els canvis s'apliquen immediatament. Els mòduls de "Comissió" només els veurà la junta.
-          </Text>
+          <Text style={styles.modulsHint}>{t('settings.modules.hint')}</Text>
           <View style={styles.card}>
             {ALL_MODULS.map((modul, idx) => {
               const actiu = modulsActius.includes(modul.key)
@@ -494,7 +532,7 @@ export default function CollaSettingsScreen() {
                         onPress={() => toggleModulVisibilitat(modul.key)}
                       >
                         <Text style={[styles.visPillText, comissioOnly && styles.visPillTextComissio]}>
-                          {comissioOnly ? '🔒 Comissió' : '👥 Tots'}
+                          {comissioOnly ? t('settings.modules.commission') : t('settings.modules.all')}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -545,9 +583,15 @@ const styles = StyleSheet.create({
   editLink:           { ...typography.caption, color: colors.primary[600], fontWeight: '600' },
 
   // Fields
-  fieldWrap:    { paddingHorizontal: spacing[4], paddingTop: spacing[3] },
-  fieldLabel:   { ...typography.label, color: colors.gray[500], marginBottom: spacing[2] },
-  renameHint:   { ...typography.caption, color: colors.gray[400], marginTop: spacing[1], paddingBottom: spacing[2] },
+  fieldWrap:      { paddingHorizontal: spacing[4], paddingTop: spacing[3] },
+  fieldLabel:     { ...typography.label, color: colors.gray[500], marginBottom: spacing[1] },
+  fieldReadOnly:  { ...typography.body, color: colors.gray[400], paddingBottom: spacing[2] },
+  renameHint:     { ...typography.caption, color: colors.gray[400], marginTop: spacing[1], paddingBottom: spacing[2] },
+  // Location
+  locationBtn:     { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[4], flexDirection: 'row', alignItems: 'center', gap: spacing[3], borderWidth: 1.5, borderColor: colors.gray[200] },
+  locationBtnIcon: { fontSize: 22 },
+  locationBtnTitle:{ ...typography.body, color: colors.gray[800], fontWeight: '600' },
+  locationBtnSub:  { ...typography.caption, color: colors.gray[400], marginTop: 2 },
 
   // Landing
   landingBtn:       { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[4], flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1.5, borderColor: colors.primary[200] },

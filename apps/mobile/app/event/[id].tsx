@@ -5,9 +5,12 @@ import {
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '@/lib/supabase'
 import { formatData, formatHora } from '@lacolla/shared'
+import { useTranslation } from 'react-i18next'
 import { useCollaStore } from '@/stores/colla'
+import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Avatar } from '@/components/ui/Avatar'
 import { Button } from '@/components/ui/Button'
@@ -18,7 +21,9 @@ import type { SavedBlock } from '@/components/ui/RichBody'
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
+  const { t } = useTranslation()
   const { isComissioActiva } = useCollaStore()
+  const { profile } = useAuthStore()
   const [event, setEvent] = useState<any>(null)
   const [rsvps, setRsvps] = useState<any[]>([])
   const [myRsvp, setMyRsvp] = useState<string | null>(null)
@@ -61,7 +66,6 @@ export default function EventScreen() {
       await supabase.from('event_rsvp').delete().eq('event_id', id).eq('user_id', userId)
       setMyRsvp(null)
       setRsvps(r => r.filter(x => x.user_id !== userId))
-      // remove from any car for this event
       const { data: cotxes } = await supabase.from('event_cotxes').select('id').eq('event_id', id)
       const ids = cotxes?.map(c => c.id) ?? []
       if (ids.length > 0) {
@@ -76,17 +80,23 @@ export default function EventScreen() {
       setMyRsvp(estat)
       setRsvps(r => {
         const filtered = r.filter(x => x.user_id !== userId)
-        return [...filtered, { user_id: userId, estat, profiles: null }]
+        return [...filtered, {
+          user_id: userId,
+          estat,
+          profiles: profile
+            ? { nom: profile.nom, cognoms: profile.cognoms, avatar_url: profile.avatar_url }
+            : null,
+        }]
       })
     }
     setRsvpLoading(false)
   }
 
   async function handleDelete() {
-    Alert.alert('Eliminar event', 'Estàs segur que vols eliminar aquest event?', [
-      { text: 'Cancel·lar', style: 'cancel' },
+    Alert.alert(t('event.delete.title'), t('event.delete.confirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Eliminar', style: 'destructive',
+        text: t('common.delete'), style: 'destructive',
         onPress: async () => {
           await supabase.from('events').delete().eq('id', id)
           router.back()
@@ -101,6 +111,10 @@ export default function EventScreen() {
     Linking.openURL(url)
   }
 
+  function goToEdit() {
+    router.push({ pathname: '/event/create', params: { eventId: id } } as any)
+  }
+
   if (loading) {
     return (
       <View style={styles.loader}>
@@ -112,13 +126,14 @@ export default function EventScreen() {
   if (!event) {
     return (
       <View style={styles.loader}>
-        <Text style={styles.notFound}>Esdeveniment no trobat</Text>
+        <Text style={styles.notFound}>{t('event.notFound')}</Text>
       </View>
     )
   }
 
   const apuntats = rsvps.filter(r => r.estat === 'apuntat')
   const isApuntat = myRsvp === 'apuntat'
+  const canManage = isComissioActiva()
 
   return (
     <View style={styles.container}>
@@ -129,9 +144,21 @@ export default function EventScreen() {
             <Image source={{ uri: event.imatge_url }} style={styles.heroImg} />
             <View style={styles.heroOverlay} />
             <SafeAreaView style={styles.heroContent} edges={['top']}>
-              <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-                <Text style={styles.backBtnText}>←</Text>
-              </TouchableOpacity>
+              <View style={styles.headerRow}>
+                <TouchableOpacity style={styles.heroBtn} onPress={() => router.back()}>
+                  <Ionicons name="chevron-back" size={22} color={colors.white} />
+                </TouchableOpacity>
+                {canManage && (
+                  <View style={styles.headerActions}>
+                    <TouchableOpacity style={styles.heroBtn} onPress={goToEdit}>
+                      <Ionicons name="pencil-outline" size={18} color={colors.white} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.heroBtn} onPress={handleDelete}>
+                      <Ionicons name="trash-outline" size={18} color={colors.white} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </SafeAreaView>
             <View style={styles.heroText}>
               <Text style={styles.collaName}>{event.colles?.nom}</Text>
@@ -139,10 +166,22 @@ export default function EventScreen() {
             </View>
           </View>
         ) : (
-          <SafeAreaView style={styles.plainHeader} edges={['top']}>
-            <TouchableOpacity style={styles.backBtnDark} onPress={() => router.back()}>
-              <Text style={styles.backBtnDarkText}>←</Text>
-            </TouchableOpacity>
+          <SafeAreaView style={styles.plainHeaderWrap} edges={['top']}>
+            <View style={styles.headerRow}>
+              <TouchableOpacity style={styles.darkBtn} onPress={() => router.back()}>
+                <Ionicons name="chevron-back" size={22} color={colors.gray[700]} />
+              </TouchableOpacity>
+              {canManage && (
+                <View style={styles.headerActions}>
+                  <TouchableOpacity style={styles.darkActionBtn} onPress={goToEdit}>
+                    <Ionicons name="pencil-outline" size={17} color={colors.gray[600]} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.dangerActionBtn} onPress={handleDelete}>
+                    <Ionicons name="trash-outline" size={17} color={colors.danger[500]} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
             <Text style={styles.collaNameDark}>{event.colles?.nom}</Text>
             <Text style={styles.plainTitle}>{event.titol}</Text>
           </SafeAreaView>
@@ -172,10 +211,10 @@ export default function EventScreen() {
             <View style={styles.infoRow}>
               <Text style={styles.infoIcon}>👥</Text>
               <View>
-                <Text style={styles.infoText}>{apuntats.length} {apuntats.length === 1 ? 'persona apuntada' : 'persones apuntades'}</Text>
+                <Text style={styles.infoText}>{apuntats.length} {apuntats.length === 1 ? t('event.attendees.one') : t('event.attendees.many')}</Text>
                 {event.limit_places && (
                   <Text style={styles.infoSub}>
-                    {Math.max(0, event.limit_places - apuntats.length)} places lliures de {event.limit_places}
+                    {t('event.places.free', { count: Math.max(0, event.limit_places - apuntats.length), total: event.limit_places })}
                   </Text>
                 )}
               </View>
@@ -185,7 +224,7 @@ export default function EventScreen() {
           {/* Descripció */}
           {(event.descripcio_blocks || event.descripcio) && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Descripció</Text>
+              <Text style={styles.sectionTitle}>{t('event.description')}</Text>
               {event.descripcio_blocks
                 ? <RichBodyView blocks={event.descripcio_blocks as SavedBlock[]} textStyle={styles.descripcio} />
                 : <Text style={styles.descripcio}>{event.descripcio}</Text>
@@ -196,7 +235,7 @@ export default function EventScreen() {
           {/* Assistents */}
           {apuntats.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Assistents</Text>
+              <Text style={styles.sectionTitle}>{t('event.attendees')}</Text>
               <View style={styles.avatarRow}>
                 {apuntats.slice(0, 8).map((r: any) => (
                   <Avatar
@@ -224,20 +263,15 @@ export default function EventScreen() {
             refreshKey={carpoolingKey}
             onJoinedCar={() => {
               setMyRsvp('apuntat')
-              setRsvps(r => [...r.filter(x => x.user_id !== userId), { user_id: userId, estat: 'apuntat', profiles: null }])
+              setRsvps(r => [...r.filter(x => x.user_id !== userId), {
+                user_id: userId,
+                estat: 'apuntat',
+                profiles: profile
+                  ? { nom: profile.nom, cognoms: profile.cognoms, avatar_url: profile.avatar_url }
+                  : null,
+              }])
             }}
           />
-
-          {/* Accions comissió */}
-          {isComissioActiva() && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Gestió (comissió)</Text>
-              <View style={{ gap: spacing[2] }}>
-                <Button label="✏️ Editar event" variant="secondary" size="md" onPress={() => router.push({ pathname: '/event/create', params: { eventId: id } } as any)} />
-                <Button label="🗑 Eliminar event" variant="danger" size="md" onPress={handleDelete} />
-              </View>
-            </View>
-          )}
 
           <View style={{ height: 120 }} />
         </View>
@@ -247,7 +281,7 @@ export default function EventScreen() {
       <View style={styles.rsvpBar}>
         <View style={styles.rsvpBtns}>
           <Button
-            label={isApuntat ? 'Apuntat ✓ · Cancel·lar' : "M'apunte! 🙋"}
+            label={isApuntat ? t('event.attending') : t('event.join')}
             variant={isApuntat ? 'secondary' : 'primary'}
             size="lg"
             loading={rsvpLoading}
@@ -265,23 +299,27 @@ const styles = StyleSheet.create({
   loader:           { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white },
   notFound:         { ...typography.body, color: colors.gray[500] },
 
+  // Shared header row
+  headerRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[3] },
+  headerActions:    { flexDirection: 'row', gap: spacing[2] },
+
   // Hero amb imatge
   hero:             { height: 280, position: 'relative' },
   heroImg:          { width: '100%', height: '100%' },
   heroOverlay:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-  heroContent:      { ...StyleSheet.absoluteFillObject, paddingHorizontal: spacing.screenH },
-  backBtn:          { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginTop: spacing[2] },
-  backBtnText:      { fontSize: 20, color: colors.white },
+  heroContent:      { ...StyleSheet.absoluteFillObject },
+  heroBtn:          { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center' },
   heroText:         { position: 'absolute', bottom: spacing[4], paddingHorizontal: spacing.screenH },
   collaName:        { ...typography.caption, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
   heroTitle:        { ...typography.display, color: colors.white },
 
   // Header sense imatge
-  plainHeader:      { backgroundColor: colors.white, paddingHorizontal: spacing.screenH, paddingBottom: spacing[4], ...shadows.sm },
-  backBtnDark:      { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.gray[100], justifyContent: 'center', alignItems: 'center', marginBottom: spacing[3] },
-  backBtnDarkText:  { fontSize: 20, color: colors.gray[700] },
-  collaNameDark:    { ...typography.caption, color: colors.gray[500], textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 },
-  plainTitle:       { ...typography.display, color: colors.gray[900] },
+  plainHeaderWrap:  { backgroundColor: colors.white, paddingBottom: spacing[4], borderBottomWidth: 1, borderBottomColor: colors.gray[100], ...shadows.sm },
+  darkBtn:          { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.gray[100], justifyContent: 'center', alignItems: 'center' },
+  darkActionBtn:    { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.gray[100], justifyContent: 'center', alignItems: 'center' },
+  dangerActionBtn:  { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.danger[50], justifyContent: 'center', alignItems: 'center' },
+  collaNameDark:    { ...typography.caption, color: colors.gray[500], textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, paddingHorizontal: spacing.screenH },
+  plainTitle:       { ...typography.display, color: colors.gray[900], paddingHorizontal: spacing.screenH },
 
   body:             { padding: spacing.screenH, gap: spacing[4] },
   infoCard:         { backgroundColor: colors.white, borderRadius: radius.md, ...shadows.sm, overflow: 'hidden' },

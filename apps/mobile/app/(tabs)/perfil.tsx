@@ -51,6 +51,7 @@ export default function PerfilScreen() {
         { icon: '🚗', label: t('perfil.garage'),         route: '/perfil/garatge' },
         { icon: '🔒', label: t('perfil.password'),       route: '/perfil/password' },
         { icon: '🔔', label: t('perfil.notifications'),  route: '/perfil/notifications' },
+        { icon: '📨', label: t('perfil.notifHistory'), route: '/perfil/notificacions-historial' },
         { icon: currentLangFlag, label: t('perfil.language'), route: '/(auth)/language' },
       ],
     },
@@ -65,6 +66,7 @@ export default function PerfilScreen() {
     {
       title: t('perfil.section.support'),
       items: [
+        { icon: '💡', label: t('perfil.suggestions'), route: '/perfil/sugerencies' },
         { icon: '❓', label: t('perfil.help'),    onPress: () => {} },
         { icon: '📬', label: t('perfil.contact'), onPress: () => {} },
         { icon: '⭐', label: t('perfil.rate'),    onPress: () => {} },
@@ -106,7 +108,7 @@ export default function PerfilScreen() {
 
           <Text style={styles.metaText}>
             {profile?.email}
-            {anysMembreColla ? ` · Membre des de ${new Date().getFullYear() - anysMembreColla}` : ''}
+            {anysMembreColla ? ` · ${t('perfil.memberSince', { year: new Date().getFullYear() - anysMembreColla })}` : ''}
             {profile?.localitat ? ` · 📍 ${profile.localitat}` : ''}
           </Text>
         </View>

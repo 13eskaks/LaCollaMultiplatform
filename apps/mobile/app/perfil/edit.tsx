@@ -6,6 +6,7 @@ import {
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -25,11 +26,11 @@ const SEEDS = [
   'Raf','Sky','Taz','Uma','Vex','Wren','Xen','Yuki',
 ]
 const STYLES = ['avataaars', 'bottts', 'fun-emoji', 'pixel-art']
-const STYLE_LABELS: Record<string, string> = {
-  avataaars: '🧑 Persones',
-  bottts: '🤖 Robots',
-  'fun-emoji': '😀 Emojis',
-  'pixel-art': '🕹 Píxel',
+const STYLE_LABEL_KEYS: Record<string, string> = {
+  avataaars: 'perfil.edit.style.avataaars',
+  bottts:    'perfil.edit.style.bottts',
+  'fun-emoji': 'perfil.edit.style.funEmoji',
+  'pixel-art': 'perfil.edit.style.pixelArt',
 }
 
 const PRESET_AVATARS = STYLES.flatMap(style =>
@@ -41,6 +42,7 @@ const PRESET_AVATARS = STYLES.flatMap(style =>
 
 export default function EditPerfilScreen() {
   const router = useRouter()
+  const { t } = useTranslation()
   const { profile, loadProfile } = useAuthStore()
   const [nom, setNom] = useState(profile?.nom ?? '')
   const [cognoms, setCognoms] = useState(profile?.cognoms ?? '')
@@ -84,8 +86,8 @@ export default function EditPerfilScreen() {
 
   function validate() {
     const e: Record<string, string> = {}
-    if (!nom.trim()) e.nom = 'El nom és obligatori'
-    if (bio.length > 160) e.bio = 'La bio no pot superar 160 caràcters'
+    if (!nom.trim()) e.nom = t('perfil.edit.error.nom')
+    if (bio.length > 160) e.bio = t('perfil.edit.error.bio')
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -139,8 +141,8 @@ export default function EditPerfilScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <Button label="✕" variant="ghost" size="sm" onPress={() => router.back()} style={{ width: 44 }} />
-        <Text style={styles.headerTitle}>Editar perfil</Text>
-        <Button label="Guardar" size="sm" loading={loading} onPress={handleGuardar} style={{ minWidth: 80 }} />
+        <Text style={styles.headerTitle}>{t('perfil.edit.title')}</Text>
+        <Button label={t('common.save')} size="sm" loading={loading} onPress={handleGuardar} style={{ minWidth: 80 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
@@ -148,7 +150,7 @@ export default function EditPerfilScreen() {
         <View style={styles.avatarSection}>
           <Avatar name={`${nom} ${cognoms}`} uri={currentAvatarUri} size="2xl" />
           <Button
-            label="Canviar avatar"
+            label={t('perfil.edit.avatar.change')}
             variant="secondary"
             size="sm"
             onPress={() => setShowAvatarPicker(true)}
@@ -156,28 +158,28 @@ export default function EditPerfilScreen() {
           />
         </View>
 
-        <Input label="Nom *" value={nom} onChangeText={setNom} placeholder="El teu nom" error={errors.nom} />
-        <Input label="Cognoms" value={cognoms} onChangeText={setCognoms} placeholder="Els teus cognoms" />
-        <Input label="Sobrenom" value={sobrenom} onChangeText={setSobrenom} placeholder="Ex: El Pitu" />
-        <Input label="Telèfon" value={telefon} onChangeText={setTelefon} placeholder="+34 612 345 678" keyboardType="phone-pad" />
-        <Input label="Localitat" value={localitat} onChangeText={setLocalitat} placeholder="Ex: València" />
+        <Input label={t('perfil.edit.field.nom')} value={nom} onChangeText={setNom} placeholder={t('perfil.edit.ph.nom')} error={errors.nom} />
+        <Input label={t('perfil.edit.field.cognoms')} value={cognoms} onChangeText={setCognoms} placeholder={t('perfil.edit.ph.cognoms')} />
+        <Input label={t('perfil.edit.field.sobrenom')} value={sobrenom} onChangeText={setSobrenom} placeholder={t('perfil.edit.ph.sobrenom')} />
+        <Input label={t('perfil.edit.field.telefon')} value={telefon} onChangeText={setTelefon} placeholder={t('perfil.edit.ph.telefon')} keyboardType="phone-pad" />
+        <Input label={t('perfil.edit.field.localitat')} value={localitat} onChangeText={setLocalitat} placeholder={t('perfil.edit.ph.localitat')} />
         <View>
           <Input
-            label={`Bio (${bio.length}/160)`}
+            label={t('perfil.edit.field.bio', { count: bio.length })}
             value={bio}
             onChangeText={setBio}
-            placeholder="Una breu descripció sobre tu..."
+            placeholder={t('perfil.edit.ph.bio')}
             multiline
             style={{ height: 90 }}
             error={errors.bio}
           />
         </View>
 
-        <Text style={styles.sectionLabel}>Privacitat</Text>
+        <Text style={styles.sectionLabel}>{t('perfil.edit.section.privacy')}</Text>
         {[
-          { label: 'Mostrar telèfon a la colla', value: mostrarTelefon, onChange: setMostrarTelefon },
-          { label: 'Visible en el directori global', value: visibleDirectori, onChange: setVisibleDirectori },
-          { label: 'Rebre missatges d\'altres colles', value: acceptaMissatgesAltres, onChange: setAcceptaMissatgesAltres },
+          { label: t('perfil.edit.toggle.phone'),     value: mostrarTelefon,           onChange: setMostrarTelefon },
+          { label: t('perfil.edit.toggle.directory'), value: visibleDirectori,          onChange: setVisibleDirectori },
+          { label: t('perfil.edit.toggle.messages'),  value: acceptaMissatgesAltres,    onChange: setAcceptaMissatgesAltres },
         ].map(({ label, value, onChange }) => (
           <View key={label} style={styles.toggle}>
             <Text style={styles.toggleLabel}>{label}</Text>
@@ -195,9 +197,9 @@ export default function EditPerfilScreen() {
             <TouchableOpacity onPress={() => setShowAvatarPicker(false)}>
               <Text style={styles.pickerClose}>✕</Text>
             </TouchableOpacity>
-            <Text style={styles.pickerTitle}>Tria el teu avatar</Text>
+            <Text style={styles.pickerTitle}>{t('perfil.edit.avatar.pick')}</Text>
             <TouchableOpacity onPress={pickFromGallery}>
-              <Text style={styles.pickerGallery}>📷 Galeria</Text>
+              <Text style={styles.pickerGallery}>{t('perfil.edit.avatar.gallery')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -210,7 +212,7 @@ export default function EditPerfilScreen() {
                 onPress={() => setActiveStyle(s)}
               >
                 <Text style={[styles.styleTabText, activeStyle === s && styles.styleTabTextActive]}>
-                  {STYLE_LABELS[s]}
+                  {t(STYLE_LABEL_KEYS[s])}
                 </Text>
               </TouchableOpacity>
             ))}

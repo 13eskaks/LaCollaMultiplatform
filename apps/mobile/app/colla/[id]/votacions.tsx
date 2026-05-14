@@ -1,7 +1,10 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
+import { useDataCache } from '@/stores/dataCache'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
+import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -14,16 +17,28 @@ type Tab = typeof TABS[number]
 export default function VotacionsScreen() {
   const { id: collaId } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
+  const { t } = useTranslation()
   const { isComissioActiva, isMembreActiu } = useCollaStore()
+  const dc = useDataCache()
   const [tab, setTab] = useState<Tab>('Actives')
   const [votacions, setVotacions] = useState<any[]>([])
   const [myVots, setMyVots] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
 
-  useFocusEffect(useCallback(() => { loadVotacions() }, [collaId, tab]))
+  useEffect(() => {
+    const cached = dc.get<{ votacions: any[]; myVots: string[] }>(`votacions_${tab}_${collaId}`)
+    if (cached?.votacions?.length) { setVotacions(cached.votacions); setMyVots(new Set(cached.myVots ?? [])); setLoading(false) }
+    else { setVotacions([]); setMyVots(new Set()); setLoading(true) }
+  }, [collaId, tab])
+
+  useFocusEffect(useCallback(() => {
+    if (dc.fresh(`votacions_${tab}_${collaId}`)) return
+    loadVotacions()
+  }, [collaId, tab]))
 
   async function loadVotacions() {
-    setLoading(true)
+    const CK = `votacions_${tab}_${collaId}`
+    if (!dc.get(CK)) setLoading(true)
     const now = new Date().toISOString()
     const { data: { user } } = await supabase.auth.getUser()
 
@@ -36,18 +51,22 @@ export default function VotacionsScreen() {
       user ? supabase.from('vots').select('votacio_id').eq('user_id', user.id) : null,
     ])
 
-    setVotacions(votacionsRes.data ?? [])
-    if (votsRes?.data) setMyVots(new Set(votsRes.data.map((v: any) => v.votacio_id)))
+    const list = votacionsRes.data ?? []
+    const myVotsList = votsRes?.data?.map((v: any) => v.votacio_id) ?? []
+    setVotacions(list)
+    setMyVots(new Set(myVotsList))
+    dc.put(CK, { votacions: list, myVots: myVotsList })
     setLoading(false)
   }
 
   async function handleDelete(v: any) {
-    Alert.alert('Eliminar votació', 'Estàs segur/a? S\'eliminaran tots els vots.', [
-      { text: 'Cancel·lar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: async () => {
+    Alert.alert(t('common.delete'), t('anuncis.delete.confirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.delete'), style: 'destructive', onPress: async () => {
         const { error } = await supabase.from('votacions').delete().eq('id', v.id)
         if (error) { Alert.alert('Error', error.message); return }
         setVotacions(prev => prev.filter(x => x.id !== v.id))
+        dc.bust(`votacions_${tab}_${collaId}`)
       }},
     ])
   }
@@ -65,14 +84,16 @@ export default function VotacionsScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.backText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.title}>Votacions</Text>
+        <Text style={styles.title}>{t('modul.votacions')}</Text>
         <View style={{ width: 36 }} />
       </View>
 
       <View style={styles.tabsRow}>
-        {TABS.map(t => (
-          <TouchableOpacity key={t} style={[styles.tabBtn, tab === t && styles.tabBtnActive]} onPress={() => setTab(t)}>
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>{t}</Text>
+        {TABS.map(tabKey => (
+          <TouchableOpacity key={tabKey} style={[styles.tabBtn, tab === tabKey && styles.tabBtnActive]} onPress={() => setTab(tabKey)}>
+            <Text style={[styles.tabText, tab === tabKey && styles.tabTextActive]}>
+              {tabKey === 'Actives' ? t('votacions.tabs.active') : t('votacions.tabs.closed')}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -80,7 +101,7 @@ export default function VotacionsScreen() {
       {loading ? (
         <ActivityIndicator color={colors.primary[600]} style={{ marginTop: spacing[8] }} />
       ) : votacions.length === 0 ? (
-        <EmptyState icon="🗳️" title={`Cap votació ${tab.toLowerCase()}`} subtitle="Crea la primera votació de la colla" />
+        <EmptyState icon="🗳️" title={tab === 'Actives' ? t('votacions.tabs.active') : t('votacions.tabs.closed')} subtitle="" />
       ) : (
         <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
           {votacions.map(v => {
@@ -95,8 +116,8 @@ export default function VotacionsScreen() {
                     <Badge label="Pendent" variant="warning" size="sm" />
                   )}
                   {isComissioActiva() && (
-                    <TouchableOpacity onPress={() => handleDelete(v)} hitSlop={8}>
-                      <Text style={styles.deleteBtn}>🗑</Text>
+                    <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(v)} hitSlop={8}>
+                      <Ionicons name="trash-outline" size={15} color={colors.gray[400]} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -131,7 +152,7 @@ export default function VotacionsScreen() {
 const styles = StyleSheet.create({
   safe:        { flex: 1, backgroundColor: colors.gray[50] },
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.screenH, paddingVertical: spacing[4], backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
-  backText:    { fontSize: 22, color: colors.primary[600], width: 36 },
+  backText:    { fontSize: 22, color: colors.primary[600], width: 36, lineHeight: 26 },
   title:       { ...typography.h3, color: colors.gray[900] },
   tabsRow:     { flexDirection: 'row', paddingHorizontal: spacing.screenH, paddingVertical: spacing[2], backgroundColor: colors.white, gap: spacing[2], borderBottomWidth: 1, borderBottomColor: colors.gray[100] },
   tabBtn:      { paddingHorizontal: spacing[4], paddingVertical: 7, borderRadius: radius.full, backgroundColor: colors.gray[100] },
@@ -141,7 +162,7 @@ const styles = StyleSheet.create({
   list:        { padding: spacing.screenH, gap: spacing[3] },
   card:        { backgroundColor: colors.white, borderRadius: radius.md, padding: spacing[4], gap: spacing[3], ...shadows.sm },
   cardTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing[2] },
-  deleteBtn:   { fontSize: 14, color: colors.gray[400] },
+  deleteBtn:   { padding: 5 },
   pregunta:    { ...typography.h3, color: colors.gray[900], flex: 1 },
   cardMeta:    { flexDirection: 'row', alignItems: 'center', gap: spacing[2] },
   metaText:    { ...typography.bodySm, color: colors.gray[500] },
