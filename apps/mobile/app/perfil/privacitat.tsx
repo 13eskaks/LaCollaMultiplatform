@@ -1,8 +1,9 @@
-import { View, Text, ScrollView, Switch, StyleSheet, Alert } from 'react-native'
+import { View, Text, ScrollView, Switch, StyleSheet, Alert, TouchableOpacity } from 'react-native'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { API_URL, ANON_KEY } from '@/lib/config'
 import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { ScreenHeader } from '@/components/ui/ScreenHeader'
@@ -10,12 +11,43 @@ import { Button } from '@/components/ui/Button'
 
 export default function PrivacitatScreen() {
   const router = useRouter()
-  const { profile, loadProfile } = useAuthStore()
+  const { profile, loadProfile, signOut } = useAuthStore()
 
   const [showTelefon, setShowTelefon] = useState(false)
   const [repMissatges, setRepMissatges] = useState(true)
   const [visibleDirectori, setVisibleDirectori] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Eliminar compte',
+      "S'esborraran el teu perfil i les teues dades de manera permanent. Aquesta acció no es pot desfer.",
+      [
+        { text: 'Cancel·lar', style: 'cancel' },
+        {
+          text: 'Eliminar', style: 'destructive', onPress: async () => {
+            setDeleting(true)
+            try {
+              const { data: { session } } = await supabase.auth.getSession()
+              if (!session) return
+              const res = await fetch(`${API_URL}/auth/v1/user`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${session.access_token}`, apikey: ANON_KEY },
+              })
+              if (!res.ok) throw new Error(`Error ${res.status}`)
+              await signOut()
+              router.replace('/(auth)/welcome')
+            } catch (e: any) {
+              Alert.alert('Error', "No s'ha pogut eliminar el compte. Torna-ho a provar.")
+            } finally {
+              setDeleting(false)
+            }
+          },
+        },
+      ],
+    )
+  }
 
   useEffect(() => {
     if (profile) {
@@ -93,10 +125,14 @@ export default function PrivacitatScreen() {
 
         <Text style={styles.legalNote}>
           Les teves dades es gestionen d'acord amb la nostra Política de privacitat.
-          Pots sol·licitar l'eliminació del compte en qualsevol moment des d'Ajuda i FAQ.
+          Pots eliminar el teu compte en qualsevol moment des d'aquesta pantalla.
         </Text>
 
         <Button label="Guardar" size="lg" loading={saving} onPress={handleSave} />
+
+        <TouchableOpacity style={styles.deleteBtn} onPress={handleDeleteAccount} disabled={deleting}>
+          <Text style={styles.deleteText}>{deleting ? 'Eliminant...' : 'Eliminar el meu compte'}</Text>
+        </TouchableOpacity>
 
         <View style={{ height: spacing[8] }} />
       </ScrollView>
@@ -114,5 +150,7 @@ const styles = StyleSheet.create({
   rowLabel:     { ...typography.body, color: colors.gray[800], fontWeight: '600' },
   rowSub:       { ...typography.caption, color: colors.gray[400], marginTop: 2 },
   divider:      { height: 1, backgroundColor: colors.gray[100] },
+  deleteBtn:    { alignItems: 'center', paddingVertical: spacing[3] },
+  deleteText:   { ...typography.body, color: colors.danger[500], fontWeight: '600' },
   legalNote:    { ...typography.caption, color: colors.gray[400], textAlign: 'center', lineHeight: 18 },
 })

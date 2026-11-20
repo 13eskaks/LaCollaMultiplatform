@@ -191,7 +191,7 @@ export default function MembresScreen() {
           {/* Pendents tab */}
           {tab === ('Pendents' as any) && (
             pendents.length === 0 ? (
-              <Text style={styles.emptyText}>Cap sol·licitud pending</Text>
+              <Text style={styles.emptyText}>{t('settings.members.noPending')}</Text>
             ) : pendents.map(m => (
               <View key={m.id} style={styles.membreCard}>
                 <Avatar name={`${m.profiles?.nom ?? ''} ${m.profiles?.cognoms ?? ''}`} uri={m.profiles?.avatar_url} size="md" />

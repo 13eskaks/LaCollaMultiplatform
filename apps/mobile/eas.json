@@ -8,8 +8,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://dlrvdmlpwfdkqsmqoobd.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_NNMJnqGhjZnv88UN5ITjcQ_bWBhMEQw"
+        "EXPO_PUBLIC_API_URL": "https://lacolla-omega.vercel.app"
       }
     },
     "production": {
@@ -17,8 +16,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://dlrvdmlpwfdkqsmqoobd.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_NNMJnqGhjZnv88UN5ITjcQ_bWBhMEQw"
+        "EXPO_PUBLIC_API_URL": "https://lacolla-omega.vercel.app"
       }
     }
   },

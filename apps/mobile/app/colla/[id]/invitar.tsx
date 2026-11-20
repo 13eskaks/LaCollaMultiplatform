@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Clipboard from 'expo-clipboard'
 import { supabase } from '@/lib/supabase'
+import { WEB_URL } from '@/lib/config'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { ScreenHeader } from '@/components/ui/ScreenHeader'
@@ -29,9 +30,8 @@ export default function InvitarScreen() {
     setLoading(false)
   }
 
-  const inviteUrl = slug
-    ? `https://lacolla.app/colla/${slug}`
-    : `https://lacolla.app/join/${collaId}`
+  // Pàgina pública de la colla dins de l'app web (des d'allí es pot sol·licitar l'entrada)
+  const inviteUrl = `${WEB_URL}/colla/${collaId}/landing`
 
   async function handleCopy() {
     await Clipboard.setStringAsync(inviteUrl)

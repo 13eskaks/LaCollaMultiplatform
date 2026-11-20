@@ -196,6 +196,12 @@ export async function handleAuth(req: Request, sub: string): Promise<Response> {
     if (claims.role !== 'authenticated' || !claims.sub) throw new AuthError(401, 'bad_jwt', 'invalid JWT: unable to parse or verify signature')
     let u = (await adminQuery('select * from auth.users where id = $1', [claims.sub])).rows[0]
     if (!u) throw new AuthError(403, 'user_not_found', 'User from sub claim in JWT does not exist')
+    if (method === 'DELETE') {
+      // Eliminació del compte per part del mateix usuari (requisit App Store / RGPD)
+      await adminQuery('delete from storage.objects where owner = $1', [u.id])
+      await adminQuery('delete from auth.users where id = $1', [u.id])
+      return new Response(null, { status: 204 })
+    }
     if (method === 'PUT') {
       const body = await readJson(req)
       if (body.password !== undefined) {

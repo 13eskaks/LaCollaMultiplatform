@@ -133,5 +133,18 @@ ok('login with new password', !r.error, r.error)
 r = await a.auth.signOut()
 ok('signOut', !r.error, r.error)
 
+console.log('cleanup')
+const a2 = mk()
+await a2.auth.signInWithPassword({ email: `a${tag}@test.dev`, password: 'newpass123' })
+r = await a2.from('colles').delete().eq('id', collaId).select()
+ok('president deletes colla', r.data?.length === 1, r)
+for (const c of [a2, b]) {
+  const { data: { session } } = await c.auth.getSession()
+  const res = await fetch(`${URL}/auth/v1/user`, { method: 'DELETE', headers: { Authorization: `Bearer ${session?.access_token}` } })
+  ok('delete account', res.status === 204, res.status)
+}
+r = await mk().auth.signInWithPassword({ email: `b${tag}@test.dev`, password: 'secret123' })
+ok('deleted account cannot login', !!r.error, r)
+
 console.log(fails ? `\n${fails} FALLADES` : '\nTOT OK')
 process.exit(fails ? 1 : 0)

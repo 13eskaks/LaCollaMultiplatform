@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { WEB_URL } from '@/lib/config'
 import { uploadImage, imageInfo } from '@/lib/upload'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -153,7 +154,7 @@ export default function CreateCollaScreen() {
     }
   }
 
-  const inviteLink = collaId ? `https://lacolla.app/colla/${collaId}` : ''
+  const inviteLink = collaId ? `${WEB_URL}/colla/${collaId}/landing` : ''
 
   const steps = [
     // PAS 1

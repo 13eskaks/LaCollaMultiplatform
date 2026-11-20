@@ -1,6 +1,6 @@
 import '@/lib/web-polyfills'
 import { useEffect } from 'react'
-import { Stack, useRouter, useSegments } from 'expo-router'
+import { Stack, useRouter, useSegments, useGlobalSearchParams } from 'expo-router'
 import { I18nextProvider } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
 import { registerForPushNotifications, useNotificationNavigation } from '@/lib/notifications'
@@ -12,7 +12,15 @@ export default function RootLayout() {
   const router = useRouter()
   const segments = useSegments() as string[]
   const { session, setSession, loading } = useAuthStore()
-  const { loadColles } = useCollaStore()
+  const { loadColles, loading: collesLoading, colles, collaActiva, setCollaActiva } = useCollaStore()
+  const params = useGlobalSearchParams<{ id?: string }>()
+
+  // Si s'obri directament una pantalla d'una colla (p. ex. recarregant a la web),
+  // aquesta colla passa a ser l'activa perquè els permisos (comissió, etc.) siguen els correctes.
+  useEffect(() => {
+    if (segments[0] !== 'colla' || !params.id || collesLoading) return
+    if (collaActiva?.id !== params.id && colles.some(c => c.id === params.id)) setCollaActiva(params.id)
+  }, [segments[0], params.id, collesLoading, colles])
 
   useNotificationNavigation(router)
 
@@ -58,7 +66,8 @@ export default function RootLayout() {
     }
   }, [session, loading, segments])
 
-  if (loading) return null
+  // Esperem la sessió i, si n'hi ha, les colles de l'usuari (permisos) abans de pintar
+  if (loading || (session && collesLoading && colles.length === 0)) return null
 
   return (
     <I18nextProvider i18n={i18n}>

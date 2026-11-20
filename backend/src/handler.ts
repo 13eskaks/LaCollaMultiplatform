@@ -37,7 +37,14 @@ async function readBody(req: Request): Promise<unknown> {
 }
 
 export async function handle(req: Request): Promise<Response> {
-  const url = new URL(req.url)
+  let url = new URL(req.url)
+  // A Vercel, les rutes reescriuen a /api?__path=/rest/v1/...; recuperem el camí original
+  const forwarded = url.searchParams.get('__path')
+  if (forwarded !== null) {
+    url.searchParams.delete('__path')
+    url = new URL(forwarded + (url.search || ''), url.origin)
+    req = new Request(url, req)
+  }
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
   const path = url.pathname.replace(/^\/api(?=\/)/, '')
 
