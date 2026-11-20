@@ -2,153 +2,103 @@
 
 App de gestió per a colles valencianes.
 
+## En producció
+
+| | |
+|---|---|
+| **Web (app completa)** | https://lacolla-omega.vercel.app |
+| Backend (mateix domini) | `/rest/v1`, `/auth/v1`, `/storage/v1` |
+| Base de dades | Neon Postgres (projecte `lacolla`, Frankfurt) |
+| Hosting | Vercel (projecte `lacolla`) |
+
+La mateixa app Expo funciona a la web, iOS i Android i parla amb el mateix backend.
+
 ## Estructura
 
 ```
 lacolla/
 ├── apps/
-│   ├── mobile/          # Expo (React Native) — iOS + Android
-│   ├── web/             # Next.js — landings públiques + SEO
-│   └── admin/           # Next.js — panell superadmin
-├── packages/
-│   └── shared/          # Types, constants i utils compartits
-└── supabase/
-    ├── migrations/       # SQL schema + RLS
-    └── functions/        # Edge Functions (Deno)
+│   ├── mobile/          # Expo (React Native) — iOS + Android + Web
+│   ├── web/             # Next.js — landings SEO (antic, encara apunta a Supabase)
+│   └── admin/           # Next.js — panell superadmin (antic, encara apunta a Supabase)
+├── backend/             # API pròpia (Vercel Functions) sobre Postgres/Neon
+│   ├── src/             # postgrest.ts, auth.ts, storage.ts, handler.ts...
+│   ├── sql/             # 000_compat.sql + migracions noves (038+)
+│   ├── test/e2e.mjs     # prova d'integració amb supabase-js
+│   ├── build.mjs        # genera .vercel/output (web + funció)
+│   └── deploy.mjs       # desplega a Vercel (aplica migracions al build)
+├── packages/shared/     # Types, constants i utils compartits
+└── supabase/migrations/ # Esquema original (s'aplica tal qual a Neon)
 ```
 
-## Stack
+## Arquitectura
 
-| Capa | Tecnologia |
-|------|-----------|
-| Mobile | Expo 51 + React Native |
-| Web pública | Next.js 14 App Router |
-| Panel admin | Next.js 14 App Router |
-| Backend | Supabase (PostgreSQL + Auth + Storage + Realtime) |
-| Edge Functions | Deno (Supabase Functions) |
-| Pagaments individuals | RevenueCat |
-| Pagaments de colla | Stripe |
-| Notificacions push | Expo Notifications |
-| Monorepo | Turborepo |
+L'app fa servir `@supabase/supabase-js` però **ja no depèn de Supabase**:
+el backend propi implementa el mateix protocol, així que el codi de l'app no ha canviat.
 
----
+- **Dades** (`/rest/v1`): traductor del protocol PostgREST a SQL parametritzat
+  (select amb embeds, filtres, or/and, upsert, count, single, rpc). Cada petició
+  s'executa amb `SET ROLE authenticated|anon` i `auth.uid()`, així que **totes
+  les polítiques RLS de les migracions s'apliquen igual**.
+- **Auth** (`/auth/v1`): registre, login, refresc de sessió, canvi de contrasenya,
+  recuperació per correu (Resend), eliminació de compte. JWT HS256 + bcrypt.
+- **Storage** (`/storage/v1`): imatges guardades a Postgres (`storage.objects`)
+  amb les polítiques de les migracions. Límit 8 MB per fitxer.
+- **Temps real**: substituït per consulta periòdica (`lib/realtime.ts`).
 
-## 1. Requisits previs
+### Variables d'entorn (Vercel)
 
-- Node.js >= 20
-- npm >= 10
-- Expo CLI: `npm install -g expo-cli eas-cli`
-- Supabase CLI: `npm install -g supabase`
-- Compte a [supabase.com](https://supabase.com)
-- Compte a [stripe.com](https://stripe.com)
-- Compte a [revenuecat.com](https://revenuecat.com)
-- Compte a [expo.dev](https://expo.dev)
+| Variable | Ús |
+|---|---|
+| `DATABASE_URL` | Connexió a Neon (pooler) |
+| `JWT_SECRET` | Signatura de sessions |
+| `APP_URL` | URL pública (enllaços de correus) |
+| `ADMIN_TOKEN` | Protegeix `/admin/migrate` |
+| `AUTH_AUTOCONFIRM` | `true`: no cal confirmar el correu |
+| `RESEND_API_KEY`, `MAIL_FROM` | Correus de recuperació |
 
----
-
-## 2. Configuració de Supabase
-
-### 2.1 Crear projecte
-1. Ves a [app.supabase.com](https://app.supabase.com)
-2. Crea un nou projecte: `lacolla`
-3. Guarda la URL i les claus (anon key + service role key)
-
-### 2.2 Executar les migracions
-```bash
-# Des de la carpeta arrel del projecte
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-
-# Executar les migracions en ordre
-supabase db push
-```
-
-O manualment des del SQL Editor de Supabase:
-1. Executa `supabase/migrations/001_schema.sql`
-2. Executa `supabase/migrations/002_rls.sql`
-
-### 2.3 Configurar Storage
-Al panell de Supabase → Storage, crea els buckets:
-- `fotos` (public: false)
-- `colles` (public: true — avatars i portades)
-- `profiles` (public: true — avatars)
-- `anuncis` (public: true — banners)
-- `events` (public: false)
-
-### 2.4 Configurar Auth
-Al panell de Supabase → Authentication → Providers:
-- Email: activat ✓
-- Google: afegir Client ID i Secret (des de Google Cloud Console)
-- Apple: afegir Key ID, Team ID i Private Key (des de Apple Developer)
-
-### 2.5 Desplegar Edge Functions
-```bash
-supabase functions deploy notify-solicitud
-supabase functions deploy get-anunci
-supabase functions deploy recalcular-tramo
-
-# Variables d'entorn per a les funcions
-supabase secrets set STRIPE_SECRET_KEY=sk_...
-supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-### 2.6 Configurar Webhooks de base de dades
-Al panell → Database → Webhooks, crea:
-- Nom: `on_solicitud_entrada`
-- Taula: `colla_membres`
-- Events: `INSERT`
-- URL: `https://YOUR_PROJECT.supabase.co/functions/v1/notify-solicitud`
-
----
-
-## 3. Variables d'entorn
-
-### Web (`apps/web/.env.local`)
-```bash
-cp apps/web/.env.local.example apps/web/.env.local
-# Edita amb les teues claus
-```
-
-### Admin (`apps/admin/.env.local`)
-```bash
-cp apps/admin/.env.local.example apps/admin/.env.local
-```
-
-### Mobile (`apps/mobile/.env.local`)
-```bash
-cp apps/mobile/.env.local.example apps/mobile/.env.local
-```
-
----
-
-## 4. Instal·lar dependències
+## Desenvolupament local
 
 ```bash
-# Des de la carpeta arrel
 npm install
+# Postgres local i variables
+export DATABASE_URL=postgres://user:pass@localhost:5432/lacolla
+export JWT_SECRET=$(openssl rand -hex 32)
+(cd backend && node gen-migrations.mjs && npx tsx src/migrate-cli.ts)   # aplica migracions
+npm run dev -w @lacolla/backend          # API a http://localhost:8787
+API_URL=http://localhost:8787 node backend/test/e2e.mjs
+
+# App
+cd apps/mobile
+EXPO_PUBLIC_API_URL=http://localhost:8787 npx expo start      # web, iOS, Android
 ```
 
----
-
-## 5. Desenvolupament local
+## Desplegar
 
 ```bash
-# Web pública (port 3000)
-npm run dev:web
+cd backend
+node build.mjs     # export web + funció API + script de migracions
+node deploy.mjs    # puja a Vercel; el build remot aplica les migracions a Neon
+```
 
-# Panel admin (port 3001)
-npm run dev:admin
+Les migracions noves van a `backend/sql/NNN_nom.sql` (s'apliquen en ordre i només un cop).
 
-# App mòbil
-npm run dev:mobile
-# Escanejar el QR amb Expo Go
+## iOS i Android
+
+`eas.json` ja apunta al backend (`EXPO_PUBLIC_API_URL`). Per publicar:
+
+```bash
+cd apps/mobile
+eas build --profile production --platform all
+eas submit --platform ios
+eas submit --platform android
 ```
 
 ---
 
-## 6. Crear el primer superadmin
+## Crear el primer superadmin
 
-Registra't a l'app amb el teu email, després executa al SQL Editor de Supabase:
+Registra't a l'app amb el teu email, després executa a l'editor SQL de Neon:
 
 ```sql
 update profiles
@@ -156,11 +106,11 @@ set is_superadmin = true
 where email = 'el_teu_email@exemple.com';
 ```
 
-Ara pots accedir al panell admin a `http://localhost:3001`.
+
 
 ---
 
-## 7. Configuració de Stripe (Premium de colla)
+## Configuració de Stripe (Premium de colla)
 
 ### 7.1 Crear productes a Stripe
 Al dashboard de Stripe → Products, crea:
@@ -181,7 +131,7 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 
 ---
 
-## 8. Configuració de RevenueCat (Premium individual)
+## Configuració de RevenueCat (Premium individual)
 
 1. Crea un projecte a [app.revenuecat.com](https://app.revenuecat.com)
 2. Connecta App Store Connect i Google Play
@@ -193,41 +143,7 @@ stripe listen --forward-to localhost:3000/api/stripe/webhook
 
 ---
 
-## 9. Desplegament en producció
-
-### Web + Admin (Vercel)
-```bash
-# Instal·lar Vercel CLI
-npm install -g vercel
-
-# Desplegar web
-cd apps/web && vercel
-
-# Desplegar admin (domini: admin.lacolla.app)
-cd apps/admin && vercel
-```
-
-### Mobile (EAS Build)
-```bash
-cd apps/mobile
-
-# Configurar EAS
-eas build:configure
-
-# Build de preview (per a proves internes)
-eas build --profile preview --platform all
-
-# Build de producció (per a App Store i Google Play)
-eas build --profile production --platform all
-
-# Publicar a les stores
-eas submit --platform ios
-eas submit --platform android
-```
-
----
-
-## 10. Ordre de desenvolupament recomanat
+## Ordre de desenvolupament recomanat
 
 **Fase 1 — MVP (8-10 setmanes)**
 - [ ] Auth (login, registre, verificació email)
@@ -262,7 +178,7 @@ eas submit --platform android
 
 ---
 
-## 11. Seguretat — checklist pre-producció
+## Seguretat — checklist pre-producció
 
 - [ ] RLS activat a totes les taules ✓ (fet a 002_rls.sql)
 - [ ] Email verification obligatori activat a Supabase Auth
@@ -274,21 +190,6 @@ eas submit --platform android
 - [ ] Endpoint d'exportació de dades (GDPR)
 - [ ] Soft delete implementat per a usuaris
 - [ ] Storage buckets amb polítiques correctes
-
----
-
-## 12. Eines útils per al desenvolupament
-
-```bash
-# Veure logs de Supabase en temps real
-supabase functions logs notify-solicitud --tail
-
-# Reset de la base de dades en local
-supabase db reset
-
-# Generar tipus TypeScript des del schema de Supabase
-supabase gen types typescript --linked > packages/shared/database.types.ts
-```
 
 ---
 
@@ -307,8 +208,6 @@ supabase gen types typescript --linked > packages/shared/database.types.ts
 
 ## Domini
 
-- Web pública: `lacolla.app`
-- Panel admin: `admin.lacolla.app`
-- Supabase: configurat automàticament
-
-Configura els DNS a Cloudflare apuntant a Vercel.
+- Ara: `https://lacolla-omega.vercel.app`
+- Per fer servir un domini propi (p. ex. `lacolla.app`): afegeix-lo al projecte
+  `lacolla` de Vercel, actualitza `APP_URL` a Vercel i `EXPO_PUBLIC_API_URL` a `apps/mobile/eas.json`.
