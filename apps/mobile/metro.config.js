@@ -22,11 +22,12 @@ config.server.rewriteRequestUrl = (url) => {
   return originalRewriteUrl ? originalRewriteUrl(url) : url;
 };
 
-// Force react to always resolve from mobile (React 19), not root (React 18)
+// Force react / react-dom to always resolve from mobile (React 19), not root (React 18, used by Next.js apps)
+const FORCE_LOCAL = ['react', 'react-dom'];
 config.resolver.resolveRequest = (context, moduleName, platform) => {
-  if (moduleName === 'react' || moduleName.startsWith('react/')) {
+  if (FORCE_LOCAL.some(m => moduleName === m || moduleName.startsWith(m + '/'))) {
     try {
-      const filePath = require.resolve(moduleName);
+      const filePath = require.resolve(moduleName, { paths: [projectRoot] });
       return { filePath, type: 'sourceFile' };
     } catch {
       return context.resolveRequest(context, moduleName, platform);

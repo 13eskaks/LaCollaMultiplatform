@@ -175,7 +175,7 @@ export default function TricountScreen() {
     }))
 
     setMembres(mList)
-    setDespeses(despesesRes.data ?? [])
+    setDespeses((despesesRes.data ?? []) as unknown as Despesa[])
     setLiquidacions(liquidacionsRes.data ?? [])
     setLoading(false)
   }

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ActivityIndicator } from 'react-native'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { usePolling } from '@/lib/realtime'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing } from '@/theme'
 import { Button } from '@/components/ui/Button'
@@ -20,29 +21,18 @@ export default function PendingScreen() {
     }
   }, [colla_id])
 
-  // Subscripció Realtime: quan la membresia canvia a 'actiu'
-  useEffect(() => {
+  // Comprovem periòdicament si la sol·licitud s'ha aprovat
+  usePolling(async () => {
     if (!colla_id) return
-    const channel = supabase
-      .channel('membership-status')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'colla_membres',
-          filter: `colla_id=eq.${colla_id}`,
-        },
-        async (payload: any) => {
-          if (payload.new?.estat === 'actiu') {
-            await loadColles()
-            router.replace('/(tabs)/' as any)
-          }
-        }
-      )
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [colla_id])
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data } = await supabase.from('colla_membres').select('estat')
+      .eq('colla_id', colla_id).eq('user_id', user.id).maybeSingle()
+    if (data?.estat === 'actiu') {
+      await loadColles()
+      router.replace('/(tabs)/' as any)
+    }
+  }, 5000, !!colla_id)
 
   return (
     <SafeAreaView style={styles.safe}>

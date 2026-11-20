@@ -6,9 +6,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useState, useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
-import * as FileSystem from 'expo-file-system'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { useCollaStore } from '@/stores/colla'
 import { useDataCache } from '@/stores/dataCache'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -128,20 +128,11 @@ export default function CollaSettingsScreen() {
     })
     if (result.canceled) return
     const asset = result.assets[0]
-    const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg'
+    const { ext, mime } = imageInfo(asset.uri, asset.mimeType)
     const path = `${collaId}/${type}-${Date.now()}.${ext}`
     setUploadingImage(type)
     try {
-      const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 })
-      const bstr = atob(b64); const bytes = new Uint8Array(bstr.length)
-      for (let i = 0; i < bstr.length; i++) bytes[i] = bstr.charCodeAt(i)
-
-      const { error } = await supabase.storage
-        .from('colla-fotos')
-        .upload(path, bytes, { contentType: `image/${ext}`, upsert: true })
-      if (error) throw error
-
-      const { data: { publicUrl } } = supabase.storage.from('colla-fotos').getPublicUrl(path)
+      const publicUrl = await uploadImage('colla-fotos', path, asset.uri, mime)
       await supabase.from('colles').update({ [type === 'portada' ? 'portada_url' : 'avatar_url']: publicUrl }).eq('id', collaId)
       if (type === 'portada') setPortadaUrl(publicUrl)
       else setAvatarUrl(publicUrl)

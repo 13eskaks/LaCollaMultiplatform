@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Button } from '@/components/ui/Button'
@@ -138,11 +139,8 @@ export default function CreateCollaScreen() {
 
       // Pujar imatges si n'hi ha
       if (avatarUri) {
-        const ext = avatarUri.split('.').pop()
-        const path = `${collaId}/avatar.${ext}`
-        const blob = await (await fetch(avatarUri)).blob()
-        await supabase.storage.from('colles').upload(path, blob, { upsert: true })
-        const { data: { publicUrl } } = supabase.storage.from('colles').getPublicUrl(path)
+        const { ext, mime } = imageInfo(avatarUri)
+        const publicUrl = await uploadImage('colles', `${collaId}/avatar-${Date.now()}.${ext}`, avatarUri, mime)
         await supabase.from('colles').update({ avatar_url: publicUrl }).eq('id', collaId)
       }
 

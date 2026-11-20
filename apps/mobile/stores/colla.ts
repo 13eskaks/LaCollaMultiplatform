@@ -9,6 +9,7 @@ interface CollaState {
   membershipActiva: CollaMembre | null
   loading: boolean
   loadColles: () => Promise<void>
+  reset: () => void
   setCollaActiva: (collaId: string) => void
   isMembreActiu: () => boolean
   isComissioActiva: () => boolean
@@ -23,7 +24,7 @@ export const useCollaStore = create<CollaState>((set, get) => ({
   loadColles: async () => {
     set({ loading: true })
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    if (!user) { set({ colles: [], collaActiva: null, membershipActiva: null, loading: false }); return }
 
     const { data } = await supabase
       .from('colla_membres')
@@ -48,6 +49,8 @@ export const useCollaStore = create<CollaState>((set, get) => ({
       else if (colles.length > 0) get().setCollaActiva(colles[0].id)
     }
   },
+
+  reset: () => set({ colles: [], collaActiva: null, membershipActiva: null, loading: true }),
 
   setCollaActiva: (collaId: string) => {
     const colla = get().colles.find(c => c.id === collaId)

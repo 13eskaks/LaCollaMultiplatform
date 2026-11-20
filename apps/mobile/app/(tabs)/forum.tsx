@@ -3,6 +3,7 @@ import { useState, useCallback, useRef } from 'react'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { usePolling } from '@/lib/realtime'
 import { useCollaStore } from '@/stores/colla'
 import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -29,11 +30,11 @@ export default function ForumScreen() {
   const [fils, setFils] = useState<any[]>([])
   const [refreshing, setRefreshing] = useState(false)
   const [loading, setLoading] = useState(true)
-  const channelRef = useRef<any>(null)
+  // Actualització periòdica de la llista (substitueix Realtime)
+  usePolling(() => { loadFils() }, 20000, !!collaActiva)
 
   useFocusEffect(useCallback(() => {
     loadFils()
-    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [tab, collaActiva?.id]))
 
   async function loadFils() {
@@ -51,13 +52,6 @@ export default function ForumScreen() {
     setFils(data ?? [])
     setLoading(false)
 
-    // Realtime
-    if (channelRef.current) supabase.removeChannel(channelRef.current)
-    if (collaActiva && tab === 'La colla') {
-      channelRef.current = supabase.channel(`forum-${collaActiva.id}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_fils', filter: `colla_id=eq.${collaActiva.id}` }, () => loadFils())
-        .subscribe()
-    }
   }
 
   async function handleDelete(fil: any) {

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { useAuthStore } from '@/stores/auth'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { Button } from '@/components/ui/Button'
@@ -102,12 +103,9 @@ export default function EditPerfilScreen() {
       let avatar_url = profile?.avatar_url
 
       if (localAvatarUri) {
-        const ext = localAvatarUri.split('.').pop()
-        const path = `${user.id}/avatar.${ext}`
-        const blob = await (await fetch(localAvatarUri)).blob()
-        await supabase.storage.from('avatars').upload(path, blob, { upsert: true })
-        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
-        avatar_url = publicUrl
+        const { ext, mime } = imageInfo(localAvatarUri)
+        // Nom únic perquè la memòria cau no mostre l'avatar antic
+        avatar_url = await uploadImage('avatars', `${user.id}/avatar-${Date.now()}.${ext}`, localAvatarUri, mime)
       } else if (presetAvatarUrl) {
         avatar_url = presetAvatarUrl
       }

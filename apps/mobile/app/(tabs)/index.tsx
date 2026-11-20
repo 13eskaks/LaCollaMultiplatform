@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '@/lib/supabase'
+import { usePolling } from '@/lib/realtime'
 import { useAuthStore } from '@/stores/auth'
 import { useCollaStore } from '@/stores/colla'
 import { useScreenCache } from '@/stores/screenCache'
@@ -52,17 +53,11 @@ export default function InicialScreen() {
   const [loading, setLoading] = useState(true)
   const [tricountBal, setTricountBal] = useState(0)
   const [tricountOldestDebt, setTricountOldestDebt] = useState<string | null>(null)
-  const channelRef = useRef<any>(null)
+  usePolling(() => { loadData() }, 30000, !!collaActiva)
 
   useFocusEffect(useCallback(() => {
     if (!collaActiva) return
     loadData()
-    if (channelRef.current) supabase.removeChannel(channelRef.current)
-    channelRef.current = supabase.channel(`home-${collaActiva.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'anuncis', filter: `colla_id=eq.${collaActiva.id}` }, () => loadData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_rsvp' }, () => loadData())
-      .subscribe()
-    return () => { if (channelRef.current) { supabase.removeChannel(channelRef.current); channelRef.current = null } }
   }, [collaActiva?.id]))
 
   async function loadData() {

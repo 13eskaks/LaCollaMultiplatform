@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { View, Text, TouchableOpacity, Modal, Platform, StyleSheet } from 'react-native'
-import RNDateTimePicker from '@react-native-community/datetimepicker'
+import RNDateTimePickerRaw from '@react-native-community/datetimepicker'
+// Les definicions de tipus del paquet arrosseguen @types/react 18 del monorepo
+const RNDateTimePicker = RNDateTimePickerRaw as any
 import { colors, radius, typography, spacing } from '@/theme'
 
 interface Props {

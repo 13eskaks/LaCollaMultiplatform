@@ -1,22 +1,28 @@
+import { Platform } from 'react-native'
 import { createClient } from '@supabase/supabase-js'
-import * as SecureStore from 'expo-secure-store'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { API_URL, ANON_KEY } from './config'
 
-// SecureStore adapter per guardar els tokens de forma segura al mòbil
-const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => SecureStore.getItemAsync(key),
-  setItem: (key: string, value: string) => SecureStore.setItemAsync(key, value),
-  removeItem: (key: string) => SecureStore.deleteItemAsync(key),
+// Emmagatzematge de la sessió:
+//  - Web: localStorage (amb protecció per a SSR / mode privat)
+//  - iOS/Android: AsyncStorage (SecureStore té un límit de 2 KB i la sessió hi pot no cabre)
+const webStorage = {
+  getItem: (key: string) => {
+    try { return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null } catch { return null }
+  },
+  setItem: (key: string, value: string) => {
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value) } catch { /* ignore */ }
+  },
+  removeItem: (key: string) => {
+    try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key) } catch { /* ignore */ }
+  },
 }
 
-export const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      storage: ExpoSecureStoreAdapter,
-      autoRefreshToken: true,
-      persistSession: true,
-      detectSessionInUrl: false,
-    },
-  }
-)
+export const supabase = createClient(API_URL, ANON_KEY, {
+  auth: {
+    storage: Platform.OS === 'web' ? webStorage : AsyncStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+  },
+})

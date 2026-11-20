@@ -8,6 +8,7 @@ import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
 import { ScreenHeader } from '@/components/ui/ScreenHeader'
@@ -139,21 +140,19 @@ export default function FotosScreen() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setUploading(false); return }
 
+    let failed = 0
     for (const asset of result.assets) {
-      const rawExt = (asset.uri.split('.').pop() ?? 'jpg').toLowerCase()
-      const ext = rawExt === 'jpg' ? 'jpeg' : rawExt
-      const storagePath = `${collaId}/${selectedAlbum.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${rawExt}`
-      const mimeType = `image/${ext}`
+      const { ext, mime } = imageInfo(asset.uri, asset.mimeType)
+      const storagePath = `${collaId}/${selectedAlbum.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      let publicUrl: string | null = null
+      try {
+        publicUrl = await uploadImage('colla-fotos', storagePath, asset.uri, mime, false)
+      } catch (e: any) {
+        failed++
+        console.error('[fotos] upload', e?.message)
+      }
 
-      const response = await fetch(asset.uri)
-      const arrayBuffer = await response.arrayBuffer()
-
-      const { error: uploadError } = await supabase.storage
-        .from('colla-fotos')
-        .upload(storagePath, arrayBuffer, { contentType: mimeType })
-
-      if (!uploadError) {
-        const { data: { publicUrl } } = supabase.storage.from('colla-fotos').getPublicUrl(storagePath)
+      if (publicUrl) {
         await supabase.from('fotos').insert({
           colla_id: collaId,
           album_id: selectedAlbum.id,
@@ -165,6 +164,7 @@ export default function FotosScreen() {
     }
 
     setUploading(false)
+    if (failed) Alert.alert('Error', failed === 1 ? "No s'ha pogut pujar una foto" : `No s'han pogut pujar ${failed} fotos`)
     loadFotos(selectedAlbum.id)
   }
 

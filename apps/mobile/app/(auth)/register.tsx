@@ -32,7 +32,7 @@ export default function RegisterScreen() {
     if (!validate()) return
     setLoading(true)
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
@@ -40,7 +40,9 @@ export default function RegisterScreen() {
         },
       })
       if (error) throw error
-      router.push(`/(auth)/verify-email?email=${encodeURIComponent(email)}`)
+      // Si el compte queda confirmat directament, anem a l'onboarding
+      if (data.session) router.replace('/(auth)/onboarding')
+      else router.push(`/(auth)/verify-email?email=${encodeURIComponent(email)}`)
     } catch (e: any) {
       setErrors({ general: e.message })
     } finally {

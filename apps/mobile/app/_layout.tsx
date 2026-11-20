@@ -1,3 +1,4 @@
+import '@/lib/web-polyfills'
 import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { I18nextProvider } from 'react-i18next'
@@ -9,7 +10,7 @@ import i18n, { loadStoredLanguage } from '@/lib/i18n'
 
 export default function RootLayout() {
   const router = useRouter()
-  const segments = useSegments()
+  const segments = useSegments() as string[]
   const { session, setSession, loading } = useAuthStore()
   const { loadColles } = useCollaStore()
 
@@ -19,12 +20,22 @@ export default function RootLayout() {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        setSession(newSession)
-        if (newSession) {
-          await loadColles()
-          await registerForPushNotifications()
-        }
+      (event, newSession) => {
+        // No cridem supabase dins del callback directament: supabase-js manté un
+        // bloqueig d'auth i les crides niades poden quedar-se penjades.
+        setTimeout(async () => {
+          if (event === 'TOKEN_REFRESHED' && useAuthStore.getState().session) {
+            useAuthStore.setState({ session: newSession })
+            return
+          }
+          setSession(newSession)
+          if (newSession) {
+            await loadColles()
+            await registerForPushNotifications()
+          } else {
+            useCollaStore.getState().reset()
+          }
+        }, 0)
       }
     )
     return () => subscription.unsubscribe()

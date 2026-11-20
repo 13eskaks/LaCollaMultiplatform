@@ -1,6 +1,7 @@
 import { View, Text, TextInput, Image, TouchableOpacity, StyleSheet } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { colors, typography, spacing, radius } from '@/theme'
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -56,30 +57,10 @@ export function blocksFromSaved(saved: SavedBlock[]): RichBlock[] {
 // ── upload ───────────────────────────────────────────────────────────────────
 
 async function uploadImg(uri: string, entityType: string, entityId: string): Promise<string | null> {
-  const rawExt = uri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg'
-  const ext = rawExt === 'jpeg' ? 'jpg' : rawExt
-  const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+  const { ext, mime } = imageInfo(uri)
   const path = `${entityType}/${entityId}/${Date.now()}.${ext}`
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) { console.error('[RichBody] no session'); return null }
-    console.log('[RichBody] upload user:', session.user?.id?.slice(0, 8), 'role:', session.user?.role, 'token:', session.access_token?.slice(0, 20))
-    const form = new FormData()
-    form.append('file', { uri, type: mime, name: `upload.${ext}` } as any)
-    const res = await fetch(
-      `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/imatges/${path}`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
-          'x-upsert': 'true',
-        },
-        body: form,
-      },
-    )
-    if (!res.ok) { console.error('[RichBody upload]', res.status, await res.text()); return null }
-    return `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/public/imatges/${path}`
+    return await uploadImage('imatges', path, uri, mime)
   } catch (e: any) {
     console.error('[RichBody upload]', e?.message ?? e)
     return null

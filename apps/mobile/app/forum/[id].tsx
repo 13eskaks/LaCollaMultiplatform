@@ -7,6 +7,8 @@ import { useState, useEffect, useRef } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
+import { usePolling } from '@/lib/realtime'
 import { useCollaStore } from '@/stores/colla'
 import { Ionicons } from '@expo/vector-icons'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -27,6 +29,8 @@ export default function ForumFilScreen() {
   const { isComissioActiva } = useCollaStore()
   const [fil, setFil] = useState<any>(null)
   const [missatges, setMissatges] = useState<any[]>([])
+  const missatgesRef = useRef<any[]>([])
+  missatgesRef.current = missatges
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -36,11 +40,21 @@ export default function ForumFilScreen() {
   const [draftTitle, setDraftTitle] = useState('')
   const [uploadingImage, setUploadingImage] = useState(false)
   const flatListRef = useRef<FlatList>(null)
-  const channelRef = useRef<any>(null)
+  // Missatges nous: consulta periòdica (substitueix Realtime)
+  usePolling(async () => {
+    if (!filId || loading) return
+    const last = missatgesRef.current[missatgesRef.current.length - 1]
+    let q = supabase.from('forum_missatges').select('*, profiles(nom, avatar_url)').eq('fil_id', filId).order('created_at', { ascending: true })
+    if (last?.created_at) q = q.gt('created_at', last.created_at)
+    const { data } = await q
+    if (data?.length) {
+      setMissatges(prev => [...prev, ...data.filter((d: any) => !prev.some(m => m.id === d.id))])
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100)
+    }
+  }, 5000)
 
   useEffect(() => {
     loadData()
-    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [filId])
 
   async function loadData() {
@@ -59,20 +73,7 @@ export default function ForumFilScreen() {
     if (profileRes?.data) setUserProfile(profileRes.data)
     setLoading(false)
 
-    if (channelRef.current) supabase.removeChannel(channelRef.current)
-    channelRef.current = supabase.channel(`fil-${filId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'forum_missatges', filter: `fil_id=eq.${filId}` },
-        async (payload) => {
-          const { data } = await supabase.from('forum_missatges').select('*, profiles(nom, avatar_url)').eq('id', payload.new.id).single()
-          if (data) {
-            setMissatges(prev => {
-              if (prev.some(m => m.id === data.id)) return prev
-              return [...prev, data]
-            })
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100)
-          }
-        })
-      .subscribe()
+
   }
 
   function canEditTitle() {
@@ -118,19 +119,9 @@ export default function ForumFilScreen() {
     setUploadingImage(true)
     try {
       const asset = result.assets[0]
-      const ext = asset.uri.split('.').pop()?.toLowerCase() ?? 'jpg'
-      const filename = `${filId}/${Date.now()}.${ext}`
-      const response = await fetch(asset.uri)
-      const blob = await response.blob()
-
-      const { error: uploadError } = await supabase.storage
-        .from('forum-imatges')
-        .upload(filename, blob, { contentType: `image/${ext}` })
-
-      if (uploadError) throw uploadError
-
-      const { data: urlData } = supabase.storage.from('forum-imatges').getPublicUrl(filename)
-      await handleEnviar(urlData.publicUrl)
+      const { ext, mime } = imageInfo(asset.uri, asset.mimeType)
+      const url = await uploadImage('forum-imatges', `${filId}/${Date.now()}.${ext}`, asset.uri, mime, false)
+      await handleEnviar(url)
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'No s\'ha pogut pujar la imatge')
     }

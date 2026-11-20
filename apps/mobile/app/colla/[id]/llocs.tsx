@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
 import { useState, useCallback } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import WebView from 'react-native-webview'
+import { HtmlView } from '@/components/ui/HtmlView'
 import { supabase } from '@/lib/supabase'
 import { useCollaStore } from '@/stores/colla'
 import { colors, typography, spacing, radius, shadows } from '@/theme'
@@ -230,12 +230,7 @@ export default function LlocsScreen() {
             <Text style={styles.mapTitle}>Llocs de la colla</Text>
             <View style={{ width: 80 }} />
           </View>
-          <WebView
-            style={{ flex: 1 }}
-            source={{ html: buildMapHtml(llocs) }}
-            originWhitelist={['*']}
-            javaScriptEnabled
-          />
+          <HtmlView style={{ flex: 1 }} html={buildMapHtml(llocs)} />
         </SafeAreaView>
       </Modal>
     </SafeAreaView>

@@ -5,6 +5,7 @@ import {
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '@/lib/supabase'
+import { uploadImage, imageInfo } from '@/lib/upload'
 import { colors, spacing, radius } from '@/theme'
 
 export type EntityType = 'votacio' | 'anunci' | 'acta' | 'event'
@@ -31,28 +32,14 @@ export async function saveImages(
 
   for (let i = 0; i < uris.length; i++) {
     const uri = uris[i]
-    const rawExt = uri.split('.').pop()?.split('?')[0]?.toLowerCase() ?? 'jpg'
-    const ext = rawExt === 'jpeg' ? 'jpg' : rawExt
-    const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+    const { ext, mime } = imageInfo(uri)
     const path = `${entityType}/${entityId}/${Date.now()}_${i}.${ext}`
 
     try {
-      const form = new FormData()
-      form.append('file', { uri, type: mimeType, name: `upload.${ext}` } as any)
-      const res = await fetch(
-        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/imatges/${path}`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            apikey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
-            'x-upsert': 'true',
-          },
-          body: form,
-        },
-      )
-      if (!res.ok) { console.error('[saveImages] upload error:', res.status, await res.text()); continue }
-      const publicUrl = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/storage/v1/object/public/imatges/${path}`
+      let publicUrl: string
+      try {
+        publicUrl = await uploadImage('imatges', path, uri, mime)
+      } catch (e: any) { console.error('[saveImages] upload error:', e?.message); continue }
       const { error: dbErr } = await supabase.from('imatges').insert({
         entity_type: entityType,
         entity_id: entityId,

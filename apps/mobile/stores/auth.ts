@@ -38,5 +38,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   signOut: async () => {
     await supabase.auth.signOut()
     set({ session: null, profile: null })
+    // Evitem que el següent usuari veja les colles de l'anterior
+    const { useCollaStore } = await import('./colla')
+    useCollaStore.getState().reset()
   },
 }))
